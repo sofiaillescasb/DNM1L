@@ -1,0 +1,3 @@
+"0",""
+"0","autoplot(pca_res, data = db, color = ""Group"", label = TRUE, shape = FALSE, label.label = ""ID"") +"
+"0","  theme_classic() "

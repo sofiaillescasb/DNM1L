@@ -1,0 +1,145 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r include=FALSE}
+library(here)
+library(caret)
+library(readxl)
+library(ggfortify)
+library(GGally)
+library(lme4)
+library(tidyverse)
+```
+
+
+```{r read_data}
+db <- read_excel(here("data/dataform.xlsx"))
+db <- na.omit(db)
+
+db$ID <- as.factor(db$ID) 
+db$Group <- as.factor(db$Group) 
+# cor(db[,-c(1,2)], method = "pearson")
+```
+
+
+
+# Visualization
+
+```{r, message=FALSE, warning=FALSE}
+long_db <- db %>%
+  pivot_longer(cols = -c(ID, Group), names_to = "Predictor", values_to = "Value")
+
+long_db %>%
+  ggplot(aes(x = ID, y = Value, fill = Group)) +
+  geom_boxplot() +
+  facet_wrap(~ Predictor, scales = "free_y") +
+  scale_fill_manual(values = c("#6996e3", "#dd5129")) +
+  theme_bw()
+
+long_db %>%
+  ggplot(aes(x = Group, y = Value, fill = Group)) +
+  geom_boxplot() +
+  facet_wrap(~ Predictor, scales = "free_y") +
+  scale_fill_manual(values = c("#6996e3", "#dd5129")) +
+  theme_classic()
+
+long_db %>%
+  ggplot(aes(x = Value, fill = Group)) +
+  geom_density(alpha = 0.6) +
+  facet_wrap(~ Predictor, scales = "free") +
+  scale_fill_manual(values = c("#6996e3", "#dd5129")) +
+  theme_classic()
+
+long_db %>%
+  ggplot(aes(x = Value, fill = Group)) +
+  geom_histogram(alpha = 0.6) +
+  facet_wrap(~ Predictor, scales = "free") +
+  scale_fill_manual(values = c("#6996e3", "#dd5129")) +
+  theme_classic()
+
+# for (p in colnames(db[-c(1,2)])) {
+#   df <- db[c("ID","Group",p)]
+#   colnames(df) <- c("ID", "Group", "Predictor")
+#   pl <- df %>%
+#     ggplot(aes(sample = Predictor, color = Group)) +
+#     geom_qq() +
+#     geom_qq_line() +
+#     scale_color_manual(values = c("#6996e3", "#dd5129")) +
+#     theme_classic() +
+#     ggtitle(p)
+#   plot(pl)
+# }
+
+db %>%
+  filter(Group == "Control") %>%
+  select(-c(ID, Group, MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio)) %>%
+  ggpairs() 
+
+db %>%
+  filter(Group == "Control") %>%
+  select(c(MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio)) %>%
+  ggpairs() 
+```
+
+
+# PCA
+
+```{r}
+
+pca_res <- prcomp(db[,-c(1,2)], scale. = TRUE)
+
+autoplot(pca_res, data = db, color = "ID", size = 3) +
+  theme_classic()
+
+autoplot(pca_res, data = db, color = "Group", size = 3, loadings = TRUE, loadings.label = TRUE) +
+  theme_classic()
+
+autoplot(pca_res, data = db, color = "Group", label = TRUE, shape = FALSE, label.label = "ID") +
+  theme_classic() 
+  
+
+```
+
+
+# Logistic Regrassion
+
+```{r}
+
+set.seed(2024)
+
+db_ml <- db %>%
+  select(-c(MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio))
+
+trnIndex <- createDataPartition(db_ml$ID, p = 0.7, list = FALSE)
+
+trn <- db_ml[trnIndex,]
+tst <- db_ml[-trnIndex,]
+
+lr_model <- glmer(Group ~ . + (1 | ID),
+                  data = trn, family = binomial)
+
+lr_model <- glm(Group ~ .,
+                  data = trn[-1], family = binomial)
+
+rf_model <- train(Group ~ .,
+                  data = trn[-1], 
+                  method = "rf")
+
+plot(rf_model)
+
+rf_model$finalModel
+varImp(rf_model)
+```
+
+# Naive Bayes
+
+```{r}
+
+```
+
+
+
+
