@@ -10,7 +10,7 @@ library(caret)
 library(readxl)
 library(ggfortify)
 library(GGally)
-library(lme4)
+library(glmnet)
 library(tidyverse)
 ```
 
@@ -22,6 +22,18 @@ db <- na.omit(db)
 db$ID <- as.factor(db$ID) 
 db$Group <- as.factor(db$Group) 
 # cor(db[,-c(1,2)], method = "pearson")
+
+# 
+# db <- db %>%
+#   pivot_longer(cols = -c(ID, Group), names_to = "Predictor", values_to = "Value") %>%
+#   group_by(ID, Predictor) %>%
+#   summarise( Mean = mean(Value)) %>%
+#   pivot_wider(id_cols = ID, names_from = "Predictor", values_from = "Mean") %>%
+#   mutate(Group = as.factor(ifelse(ID %in% c("20210604", "20210526", "20210409", "20210512", "20220215", "20220411"), "Control", "Disease"))) %>%
+#   select(ID, Group, everything()) %>%
+#   ungroup()
+
+
 ```
 
 
@@ -32,32 +44,32 @@ db$Group <- as.factor(db$Group)
 long_db <- db %>%
   pivot_longer(cols = -c(ID, Group), names_to = "Predictor", values_to = "Value")
 
-long_db %>%
-  ggplot(aes(x = ID, y = Value, fill = Group)) +
-  geom_boxplot() +
-  facet_wrap(~ Predictor, scales = "free_y") +
-  scale_fill_manual(values = c("#6996e3", "#dd5129")) +
-  theme_bw()
+# long_db %>%
+#   ggplot(aes(x = ID, y = Value, fill = Group)) +
+#   geom_boxplot() +
+#   facet_wrap(~ Predictor, scales = "free_y") +
+#   scale_fill_manual(values = c("#6996e3", "#dd5129")) +
+#   theme_bw()
 
 long_db %>%
   ggplot(aes(x = Group, y = Value, fill = Group)) +
   geom_boxplot() +
   facet_wrap(~ Predictor, scales = "free_y") +
-  scale_fill_manual(values = c("#6996e3", "#dd5129")) +
+  scale_fill_manual(values = c("#6996e3", "#dd5129", "#2b9b81")) +
   theme_classic()
 
 long_db %>%
   ggplot(aes(x = Value, fill = Group)) +
   geom_density(alpha = 0.6) +
   facet_wrap(~ Predictor, scales = "free") +
-  scale_fill_manual(values = c("#6996e3", "#dd5129")) +
+  scale_fill_manual(values = c("#6996e3", "#dd5129", "#2b9b81")) +
   theme_classic()
 
 long_db %>%
   ggplot(aes(x = Value, fill = Group)) +
   geom_histogram(alpha = 0.6) +
   facet_wrap(~ Predictor, scales = "free") +
-  scale_fill_manual(values = c("#6996e3", "#dd5129")) +
+  scale_fill_manual(values = c("#6996e3", "#dd5129", "#2b9b81")) +
   theme_classic()
 
 # for (p in colnames(db[-c(1,2)])) {
@@ -74,12 +86,12 @@ long_db %>%
 # }
 
 db %>%
-  filter(Group == "Control") %>%
+  # filter(Group == "Control") %>%
   select(-c(ID, Group, MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio)) %>%
   ggpairs() 
 
 db %>%
-  filter(Group == "Control") %>%
+  # filter(Group == "Control") %>%
   select(c(MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio)) %>%
   ggpairs() 
 ```
@@ -102,31 +114,106 @@ autoplot(pca_res, data = db, color = "Group", label = TRUE, shape = FALSE, label
   
 
 ```
+# Data Split
 
+```{r}
+set.seed(2024)
 
-# Logistic Regrassion
+db_ml <- db
+
+# db_ml <- db %>%
+#   select(-c(MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio))
+
+# db_ml <- db %>%
+#   select(-c(MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio))
+
+# trnIndex <- createDataPartition(db_ml$ID, p = 0.7, list = FALSE)
+
+trnIndex <- createDataPartition(db_ml$Group, p = 0.7, list = FALSE)
+
+trn <- db_ml[trnIndex,]
+tst <- db_ml[-trnIndex,]
+
+trn[-c(1,2)] <- scale(log2(trn[-c(1,2)]))
+tst[-c(1,2)] <- scale(log2(tst[-c(1,2)]))
+```
+
+# LASSO Regression
 
 ```{r}
 
 set.seed(2024)
 
-db_ml <- db %>%
-  select(-c(MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio))
+lasso_multinomial <- cv.glmnet(as.matrix(trn[-c(1,2)]), trn$Group, family = "multinomial")
+lasso_multinomial$lambda.1se
 
-trnIndex <- createDataPartition(db_ml$ID, p = 0.7, list = FALSE)
 
-trn <- db_ml[trnIndex,]
-tst <- db_ml[-trnIndex,]
+pred_lasso_multinomial <- data.frame(predict(lasso_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = lasso_multinomial$lambda.1se, type = "class"))
 
-lr_model <- glmer(Group ~ . + (1 | ID),
-                  data = trn, family = binomial)
+# plot(lasso_multinomial$glmnet.fit, xvar = "lambda", label = TRUE)
 
-lr_model <- glm(Group ~ .,
-                  data = trn[-1], family = binomial)
+confusionMatrix(as.factor(pred_lasso_multinomial[,1]), trn$Group, positive = "DNML1")
+
+coef(lasso_multinomial)
+
+```
+
+# Elastic-net Regression
+
+```{r}
+
+set.seed(2024)
+
+
+eln_multinomial <- cv.glmnet(as.matrix(trn[-c(1,2)]), trn$Group, family = "multinomial", alpha = 0.5)
+eln_multinomial$lambda.1se
+
+
+pred_eln_multinomial <- data.frame(predict(eln_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = eln_multinomial$lambda.1se, type = "class"))
+
+# plot(lasso_multinomial$glmnet.fit, xvar = "lambda", label = TRUE)
+
+confusionMatrix(as.factor(pred_eln_multinomial[,1]), trn$Group, positive = "DNML1")
+
+coef(eln_multinomial)
+
+```
+
+# Ridge Regression
+
+```{r}
+set.seed(2024)
+
+
+ridge_multinomial <- cv.glmnet(as.matrix(trn[-c(1,2)]), trn$Group, family = "multinomial", alpha = 0)
+ridge_multinomial$lambda.1se
+
+
+pred_ridge_multinomial <- data.frame(predict(ridge_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = ridge_multinomial$lambda.1se, type="class"))
+
+plot(ridge_multinomial$glmnet.fit, xvar = "lambda", label = TRUE)
+
+confusionMatrix(as.factor(pred_ridge_multinomial[,1]), trn$Group, positive = "DNML1")
+
+coef(ridge_multinomial)
+```
+
+
+# Random Forest
+
+```{r}
+set.seed(2024)
+
+search_grid <- expand.grid(
+  mtry = seq(1, 10, by = 1)
+)
 
 rf_model <- train(Group ~ .,
                   data = trn[-1], 
-                  method = "rf")
+                  method = "rf",
+                  tuneGrid = search_grid,
+                  trControl = trainControl(method = "oob"),
+                  ntree = 10000)
 
 plot(rf_model)
 
@@ -137,9 +224,74 @@ varImp(rf_model)
 # Naive Bayes
 
 ```{r}
+search_grid <- expand.grid(
+  usekernel = c(TRUE, FALSE),
+  laplace = c(TRUE, FALSE),
+  adjust = seq(1, 5, by = 1)
+)
+
+train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+nb_model <- train(Group ~ .,
+                  data = trn[-1], 
+                  method = "naive_bayes",
+                  trControl = train_control, 
+                  # preProcess = c("pca"),
+                  tuneGrid = search_grid)
+
+plot(nb_model)
+
+pred_gnb <- predict(nb_model, as.matrix(trn[-c(1,2)]), type = "raw")
+confusionMatrix(pred_gnb, trn$Group, positive = "Disease")
+
+```
+
+# SVM
+
+```{r}
+
+  
+train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+svm_model <-  train(Group ~ .,
+                  data = trn[-1], 
+                  # preProcess = c("pca"),
+                  trControl = train_control, 
+                  method = "svmLinear3")
+  
+  # 
+  # svm(formula = Group ~ ., 
+  #                data = trn[-1], 
+  #                type = 'C-classification', 
+  #                kernel = 'linear') 
+
+plot(svm_model)
+
+svm_model$finalModel
+
+pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
+confusionMatrix(pred_svm, trn$Group, positive = "Disease")
+
+```
+
+# Final model
+
+```{r}
+
+pred_lasso_multinomial <- data.frame(predict(lasso_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = lasso_multinomial$lambda.1se, type = "class"))
+
+confusionMatrix(as.factor(pred_lasso_multinomial[,1]), trn$Group, positive = "DNML1")
 
 ```
 
 
+```{r}
+final_model <- cv.glmnet(as.matrix(db_ml[-c(1,2)]), db_ml$Group, family = "multinomial")
+final_model$lambda.1se
+pred_final_model <- data.frame(predict(final_model$glmnet.fit, newx = as.matrix(db_ml[-c(1,2)]), s = final_model$lambda.1se, type = "class"))
+
+confusionMatrix(as.factor(pred_final_model[,1]), db_ml$Group, positive = "DNML1")
+
+```
 
 

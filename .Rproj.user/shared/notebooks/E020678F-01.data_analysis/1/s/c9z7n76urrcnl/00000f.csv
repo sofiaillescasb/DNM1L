@@ -1,6 +1,0 @@
-"0","db <- read_excel(here(""data/dataform.xlsx""))"
-"0","db <- na.omit(db)"
-"0",""
-"0","db$ID <- as.factor(db$ID) "
-"0","db$Group <- as.factor(db$Group) "
-"0","# cor(db[,-c(1,2)], method = ""pearson"")"

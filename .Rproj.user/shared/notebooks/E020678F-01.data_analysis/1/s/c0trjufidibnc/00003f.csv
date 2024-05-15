@@ -1,5 +1,0 @@
-"0",""
-"0","pca_res <- prcomp(db[,-c(1,2)], scale. = TRUE)"
-"0",""
-"0","autoplot(pca_res, data = db, color = ""ID"", size = 3) +"
-"0","  theme_classic()"

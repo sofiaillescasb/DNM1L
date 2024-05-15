@@ -1,5 +1,0 @@
-"0",""
-"0","db %>%"
-"0","  filter(Group == ""Control"") %>%"
-"0","  select(c(MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio)) %>%"
-"0","  ggpairs() "
