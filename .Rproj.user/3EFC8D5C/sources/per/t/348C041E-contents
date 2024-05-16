@@ -103,14 +103,17 @@ db %>%
 
 pca_res <- prcomp(db[,-c(1,2)], scale. = TRUE)
 
-autoplot(pca_res, data = db, color = "ID", size = 3) +
-  theme_classic()
+# autoplot(pca_res, data = db, color = "ID", size = 3) +
+#   theme_classic() 
+
 
 autoplot(pca_res, data = db, color = "Group", size = 3, loadings = TRUE, loadings.label = TRUE) +
-  theme_classic()
+  theme_classic() + 
+  scale_color_manual(values = c("#6996e3", "#dd5129", "#2b9b81"))
 
 autoplot(pca_res, data = db, color = "Group", label = TRUE, shape = FALSE, label.label = "ID") +
-  theme_classic() 
+  theme_classic() + 
+  scale_color_manual(values = c("#6996e3", "#dd5129", "#2b9b81"))
   
 
 ```
@@ -144,18 +147,14 @@ tst[-c(1,2)] <- scale(log2(tst[-c(1,2)]))
 
 set.seed(2024)
 
-lasso_multinomial <- cv.glmnet(as.matrix(trn[-c(1,2)]), trn$Group, family = "multinomial")
-lasso_multinomial$lambda.1se
+lasso_multinomial <- cv.glmnet(as.matrix(trn[-c(1,2)]), trn$Group, family = "multinomial", maxit = 1000000)
 
+plot(lasso_multinomial$glmnet.fit, xvar = "norm", label = TRUE, type.coef = "2norm")
 
 pred_lasso_multinomial <- data.frame(predict(lasso_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = lasso_multinomial$lambda.1se, type = "class"))
 
-# plot(lasso_multinomial$glmnet.fit, xvar = "lambda", label = TRUE)
-
 confusionMatrix(as.factor(pred_lasso_multinomial[,1]), trn$Group, positive = "DNML1")
-
-coef(lasso_multinomial)
-
+# lapply(coef(lasso_multinomial))
 ```
 
 # Elastic-net Regression
@@ -166,12 +165,10 @@ set.seed(2024)
 
 
 eln_multinomial <- cv.glmnet(as.matrix(trn[-c(1,2)]), trn$Group, family = "multinomial", alpha = 0.5)
-eln_multinomial$lambda.1se
 
+plot(eln_multinomial$glmnet.fit, xvar = "norm", label = TRUE, type.coef = "2norm")
 
 pred_eln_multinomial <- data.frame(predict(eln_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = eln_multinomial$lambda.1se, type = "class"))
-
-# plot(lasso_multinomial$glmnet.fit, xvar = "lambda", label = TRUE)
 
 confusionMatrix(as.factor(pred_eln_multinomial[,1]), trn$Group, positive = "DNML1")
 
@@ -184,18 +181,46 @@ coef(eln_multinomial)
 ```{r}
 set.seed(2024)
 
-
+library(pROC)
 ridge_multinomial <- cv.glmnet(as.matrix(trn[-c(1,2)]), trn$Group, family = "multinomial", alpha = 0)
 ridge_multinomial$lambda.1se
 
+plot(ridge_multinomial$glmnet.fit, xvar = "norm", label = TRUE, type.coef = "2norm")
 
 pred_ridge_multinomial <- data.frame(predict(ridge_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = ridge_multinomial$lambda.1se, type="class"))
-
-plot(ridge_multinomial$glmnet.fit, xvar = "lambda", label = TRUE)
 
 confusionMatrix(as.factor(pred_ridge_multinomial[,1]), trn$Group, positive = "DNML1")
 
 coef(ridge_multinomial)
+```
+
+# Multinomial logistic regression with neural networks
+
+```{r}
+set.seed(2024)
+
+search_grid <- expand.grid(
+  decay = seq(0, 0.2, by = 0.01)
+)
+
+train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+multi_model <- train(Group ~ .,
+                  data = trn[-1], 
+                  method = "multinom",
+                  tuneGrid = search_grid,
+                  trControl = train_control)
+
+plot(multi_model)
+
+
+
+pred_multi_model <- data.frame(predict(multi_model, newx = as.matrix(trn[-c(1,2)]), type="raw"))
+
+trn_class_res <- data.frame(ID = trn$ID, Prediction = pred_multi_model, Reference = trn$Group)
+
+confusionMatrix(predict(multi_model), trn$Group, positive = "DNML1")
+varImp(multi_model)
 ```
 
 
@@ -217,7 +242,7 @@ rf_model <- train(Group ~ .,
 
 plot(rf_model)
 
-rf_model$finalModel
+
 varImp(rf_model)
 ```
 
@@ -242,14 +267,15 @@ nb_model <- train(Group ~ .,
 plot(nb_model)
 
 pred_gnb <- predict(nb_model, as.matrix(trn[-c(1,2)]), type = "raw")
-confusionMatrix(pred_gnb, trn$Group, positive = "Disease")
+
+confusionMatrix(pred_gnb, trn$Group, positive = "DNM1L")
 
 ```
 
 # SVM
 
 ```{r}
-
+set.seed(2024)
   
 train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
 
@@ -259,39 +285,27 @@ svm_model <-  train(Group ~ .,
                   trControl = train_control, 
                   method = "svmLinear3")
   
-  # 
-  # svm(formula = Group ~ ., 
-  #                data = trn[-1], 
-  #                type = 'C-classification', 
-  #                kernel = 'linear') 
 
 plot(svm_model)
 
-svm_model$finalModel
-
 pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
-confusionMatrix(pred_svm, trn$Group, positive = "Disease")
+confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
 
 ```
+
+
+
 
 # Final model
 
 ```{r}
 
-pred_lasso_multinomial <- data.frame(predict(lasso_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = lasso_multinomial$lambda.1se, type = "class"))
+pred_multinomial <- predict(multi_model, as.matrix(tst[-c(1,2)]))
 
-confusionMatrix(as.factor(pred_lasso_multinomial[,1]), trn$Group, positive = "DNML1")
+confusionMatrix(pred_multinomial, tst$Group, positive = "DNML1")
 
-```
+tst_class_res <- data.frame(ID = tst$ID, Prediction = pred_multinomial, Reference = tst$Group)
 
-
-```{r}
-final_model <- cv.glmnet(as.matrix(db_ml[-c(1,2)]), db_ml$Group, family = "multinomial")
-final_model$lambda.1se
-pred_final_model <- data.frame(predict(final_model$glmnet.fit, newx = as.matrix(db_ml[-c(1,2)]), s = final_model$lambda.1se, type = "class"))
-
-confusionMatrix(as.factor(pred_final_model[,1]), db_ml$Group, positive = "DNML1")
 
 ```
-
 
