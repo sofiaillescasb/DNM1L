@@ -141,6 +141,7 @@ trn[-c(1,2)] <- scale(log2(trn[-c(1,2)]))
 tst[-c(1,2)] <- scale(log2(tst[-c(1,2)]))
 ```
 
+
 # LASSO Regression
 
 ```{r}
@@ -181,7 +182,6 @@ coef(eln_multinomial)
 ```{r}
 set.seed(2024)
 
-library(pROC)
 ridge_multinomial <- cv.glmnet(as.matrix(trn[-c(1,2)]), trn$Group, family = "multinomial", alpha = 0)
 ridge_multinomial$lambda.1se
 
@@ -196,7 +196,8 @@ coef(ridge_multinomial)
 
 # Multinomial logistic regression with neural networks
 
-```{r}
+```{r, message=FALSE}
+
 set.seed(2024)
 
 search_grid <- expand.grid(
@@ -209,18 +210,22 @@ multi_model <- train(Group ~ .,
                   data = trn[-1], 
                   method = "multinom",
                   tuneGrid = search_grid,
-                  trControl = train_control)
+                  preProcess = c("pca"),
+                  trControl = train_control,
+                  trace = FALSE)
 
 plot(multi_model)
 
 
 
-pred_multi_model <- data.frame(predict(multi_model, newx = as.matrix(trn[-c(1,2)]), type="raw"))
+pred_multi_model <- data.frame(Prediction = predict(multi_model, newx = as.matrix(trn[-c(1,2)]), type="raw"))
 
 trn_class_res <- data.frame(ID = trn$ID, Prediction = pred_multi_model, Reference = trn$Group)
 
 confusionMatrix(predict(multi_model), trn$Group, positive = "DNML1")
 varImp(multi_model)
+
+confint(multi_model$finalModel)
 ```
 
 
@@ -292,7 +297,21 @@ pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
 confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
 
 ```
+# KNN
 
+```{r}
+train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+knn_model <-  train(Group ~ .,
+                  data = trn[-1], 
+                  preProcess = c("pca"),
+                  trControl = train_control, 
+                  method = "knn")
+
+confusionMatrix(knn_model)
+plot(knn_model)
+
+```
 
 
 
@@ -305,7 +324,6 @@ pred_multinomial <- predict(multi_model, as.matrix(tst[-c(1,2)]))
 confusionMatrix(pred_multinomial, tst$Group, positive = "DNML1")
 
 tst_class_res <- data.frame(ID = tst$ID, Prediction = pred_multinomial, Reference = tst$Group)
-
 
 ```
 

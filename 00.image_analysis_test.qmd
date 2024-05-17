@@ -1,0 +1,40 @@
+---
+title: "Image reading"
+format: html
+editor: visual
+---
+
+## Python
+
+```{r installing_readlif_package, include=FALSE}
+# library(reticulate)
+
+# py_install("readlif")
+
+# py_install("matplotlib")
+
+py_install("nellie")
+
+```
+
+```{python}
+
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+from readlif.reader import LifFile
+
+new = LifFile("//hsjdbcn.es/dfsroot/Recursos/metabolismosinaptico/SOFIA/MT3373_Basal_01.lif")
+
+img_0 = new.get_image(0)
+
+# Access a specific item
+image_data = img_0.get_frame(z=0, t=0, c=0)
+
+plt.imshow(image_data)
+plt.axis('off')  # Turn off axis numbers and ticks
+plt.show()
+
+
+
+```
