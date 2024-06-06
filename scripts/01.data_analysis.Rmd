@@ -155,7 +155,8 @@ plot(lasso_multinomial$glmnet.fit, xvar = "norm", label = TRUE, type.coef = "2no
 pred_lasso_multinomial <- data.frame(predict(lasso_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = lasso_multinomial$lambda.1se, type = "class"))
 
 confusionMatrix(as.factor(pred_lasso_multinomial[,1]), trn$Group, positive = "DNML1")
-# lapply(coef(lasso_multinomial))
+
+coefficients(lasso_multinomial)
 ```
 
 # Elastic-net Regression
@@ -245,6 +246,7 @@ rf_model <- train(Group ~ .,
                   trControl = trainControl(method = "oob"),
                   ntree = 10000)
 
+confusionMatrix(predict(rf_model), trn$Group, positive = "DNML1")
 plot(rf_model)
 
 
@@ -281,49 +283,144 @@ confusionMatrix(pred_gnb, trn$Group, positive = "DNM1L")
 
 ```{r}
 set.seed(2024)
+
+library(e1071)
   
 train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
 
 svm_model <-  train(Group ~ .,
                   data = trn[-1], 
-                  # preProcess = c("pca"),
+                  preProcess = c("pca"),
                   trControl = train_control, 
                   method = "svmLinear3")
   
 
-plot(svm_model)
 
 pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
 confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
 
+
+
+# Extract the PCA model
+preproc <- preProcess(trn[-1], method = c("pca"))
+
+# Transform the original data
+pca_transformed <- predict(preproc, trn[-1])
+pca_transformed <- data.frame(pca_transformed, Group = trn$Group)
+
+# Create a grid of points in the PCA-transformed space
+x_min <- min(pca_transformed$PC1) - 1
+x_max <- max(pca_transformed$PC1) + 1
+y_min <- min(pca_transformed$PC2) - 1
+y_max <- max(pca_transformed$PC2) + 1
+
+# Generate grid points
+grid <- expand.grid(PC1 = seq(x_min, x_max, length.out = 100),
+                    PC2 = seq(y_min, y_max, length.out = 100))
+
+# Inverse transform the grid to the original feature space
+inverse_pca <- function(pca_model, pca_data, original_data) {
+  center <- pca_model$mean
+  scale <- pca_model$std
+  rotation <- pca_model$rotation
+  
+  # Calculate the original data matrix
+  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+  
+  # Re-scale and re-center
+  original_matrix <- sweep(original_matrix, 2, scale, `*`)
+  original_matrix <- sweep(original_matrix, 2, center, `+`)
+  
+  return(as.data.frame(original_matrix))
+}
+
+# Get the original feature names (excluding 'Group')
+original_feature_names <- names(trn)[-c(1,2)]
+
+# Perform inverse PCA transformation on the grid
+grid_original <- inverse_pca(preproc, grid, trn[original_feature_names])
+colnames(grid_original) <- original_feature_names
+
+# Predict on the original feature space
+grid_original$Group <- predict(svm_model, grid_original, type = "raw")
+
+# Plot the decision boundary
+ggplot() +
+  geom_point(data = pca_transformed, aes(x = PC1, y = PC2, color = Group), size = 2) +
+  geom_tile(data = grid, aes(x = PC1, y = PC2, fill = grid_original$Group), alpha = 0.3) +
+  labs(title = "SVM Decision Boundary with PCA",
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  theme_minimal()
+
+confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
+
 ```
-# KNN
-
-```{r}
-train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
-
-knn_model <-  train(Group ~ .,
-                  data = trn[-1], 
-                  preProcess = c("pca"),
-                  trControl = train_control, 
-                  method = "knn")
-
-confusionMatrix(knn_model)
-plot(knn_model)
-
-```
-
 
 
 # Final model
 
 ```{r}
 
-pred_multinomial <- predict(multi_model, as.matrix(tst[-c(1,2)]))
 
-confusionMatrix(pred_multinomial, tst$Group, positive = "DNML1")
+pred_lasso_multinomial_tst <- predict(svm_model, as.matrix(tst[-c(1,2)]), type = "raw")
 
-tst_class_res <- data.frame(ID = tst$ID, Prediction = pred_multinomial, Reference = tst$Group)
+confusionMatrix(pred_lasso_multinomial_tst, tst$Group, positive = "DNM1L")
+
+# Extract the PCA model
+preproc <- preProcess(tst[-c(1,2)], method = c("pca"))
+
+# Transform the original data
+pca_transformed <- predict(preproc, tst[-c(1,2)])
+pca_transformed <- data.frame(pca_transformed, Group = tst$Group)
+
+# Create a grid of points in the PCA-transformed space
+x_min <- min(pca_transformed$PC1) - 1
+x_max <- max(pca_transformed$PC1) + 1
+y_min <- min(pca_transformed$PC2) - 1
+y_max <- max(pca_transformed$PC2) + 1
+
+# Generate grid points
+grid <- expand.grid(PC1 = seq(x_min, x_max, length.out = 1000),
+                    PC2 = seq(y_min, y_max, length.out = 1000))
+
+# Inverse transform the grid to the original feature space
+inverse_pca <- function(pca_model, pca_data, original_data) {
+  center <- pca_model$mean
+  scale <- pca_model$std
+  rotation <- pca_model$rotation
+  
+  # Calculate the original data matrix
+  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+  
+  # Re-scale and re-center
+  original_matrix <- sweep(original_matrix, 2, scale, `*`)
+  original_matrix <- sweep(original_matrix, 2, center, `+`)
+  
+  return(as.data.frame(original_matrix))
+}
+
+# Get the original feature names (excluding 'Group')
+original_feature_names <- names(tst)[-c(1,2)]
+
+# Perform inverse PCA transformation on the grid
+grid_original <- inverse_pca(preproc, grid, tst[original_feature_names])
+colnames(grid_original) <- original_feature_names
+
+# Predict on the original feature space
+grid_original$Group <- predict(svm_model, grid_original, type = "raw")
+
+# Plot the decision boundary
+ggplot() +
+  geom_point(data = pca_transformed, aes(x = PC1, y = PC2, color = Group), size = 2) +
+  geom_tile(data = grid, aes(x = PC1, y = PC2, fill = grid_original$Group), alpha = 0.3) +
+  labs(title = "SVM Decision Boundary with PCA",
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  theme_minimal()
+
+confusionMatrix(pred_lasso_multinomial_tst, tst$Group, positive = "DNM1L")
 
 ```
+
 

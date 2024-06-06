@@ -3,7 +3,7 @@
     "path": "C:/Users/killescas/OneDrive - San Juan de Dios/Desktop/GitHub/DNM1L/scripts/01.data_analysis.Rmd",
     "project_path": "scripts/01.data_analysis.Rmd",
     "type": "r_markdown",
-    "hash": "3916510288",
+    "hash": "1053890301",
     "contents": "",
     "dirty": false,
     "created": 1715679577899.0,
@@ -14,15 +14,15 @@
         "chunk_output_type": "inline",
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "212,40",
-        "scrollLine": "195"
+        "cursorPosition": "413,0",
+        "scrollLine": "410"
     },
     "folds": "",
-    "lastKnownWriteTime": 1715956045,
+    "lastKnownWriteTime": 1717692830,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1715956046091,
+    "last_content_update": 1717692830760,
     "read_only": false,
     "read_only_alternatives": []
 }

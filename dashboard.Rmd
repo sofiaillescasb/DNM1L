@@ -1,0 +1,78 @@
+---
+title: "DNM1L Classification"
+output: 
+  flexdashboard::flex_dashboard:
+      theme: 
+        version: 4
+        bootswatch: minty
+      orientation: columns
+      vertical_layout: fill
+    
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(thematic)
+# Install thematic and un-comment for themed static plots (i.e., ggplot2)
+# thematic::thematic_rmd()
+
+library(here)
+library(caret)
+library(readxl)
+library(ggfortify)
+library(GGally)
+library(glmnet)
+library(plotly)
+
+library(tidyverse)
+
+
+db <- read_excel(here("data/dataform.xlsx"))
+db <- na.omit(db)
+
+db$ID <- as.factor(db$ID) 
+db$Group <- as.factor(db$Group) 
+long_db <- db %>%
+  pivot_longer(cols = -c(ID, Group), names_to = "Predictor", values_to = "Value")
+```
+
+## Column {.tabset data-width="650"}
+---------------------------------------------------------------------
+
+### Chart A
+
+```{r}
+
+p <- long_db %>%
+  ggplot(aes(x = Group, y = Value, fill = Group)) +
+  geom_boxplot() +
+  facet_wrap(~ Predictor, scales = "free_y") +
+  scale_fill_manual(values = c("#6996e3", "#dd5129", "#2b9b81")) +
+  theme_classic()
+
+ggplotly(p)
+
+```
+
+### Chart B
+
+```{r}
+
+```
+
+## Column {data-width="350"}
+
+---------------------------------------------------------------------
+
+
+### Chart C
+
+```{r}
+
+```
+
+### Chart D
+
+```{r}
+
+```
