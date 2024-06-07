@@ -142,58 +142,7 @@ tst[-c(1,2)] <- scale(log2(tst[-c(1,2)]))
 ```
 
 
-# LASSO Regression
 
-```{r}
-
-set.seed(2024)
-
-lasso_multinomial <- cv.glmnet(as.matrix(trn[-c(1,2)]), trn$Group, family = "multinomial", maxit = 1000000)
-
-plot(lasso_multinomial$glmnet.fit, xvar = "norm", label = TRUE, type.coef = "2norm")
-
-pred_lasso_multinomial <- data.frame(predict(lasso_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = lasso_multinomial$lambda.1se, type = "class"))
-
-confusionMatrix(as.factor(pred_lasso_multinomial[,1]), trn$Group, positive = "DNML1")
-
-coefficients(lasso_multinomial)
-```
-
-# Elastic-net Regression
-
-```{r}
-
-set.seed(2024)
-
-
-eln_multinomial <- cv.glmnet(as.matrix(trn[-c(1,2)]), trn$Group, family = "multinomial", alpha = 0.5)
-
-plot(eln_multinomial$glmnet.fit, xvar = "norm", label = TRUE, type.coef = "2norm")
-
-pred_eln_multinomial <- data.frame(predict(eln_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = eln_multinomial$lambda.1se, type = "class"))
-
-confusionMatrix(as.factor(pred_eln_multinomial[,1]), trn$Group, positive = "DNML1")
-
-coef(eln_multinomial)
-
-```
-
-# Ridge Regression
-
-```{r}
-set.seed(2024)
-
-ridge_multinomial <- cv.glmnet(as.matrix(trn[-c(1,2)]), trn$Group, family = "multinomial", alpha = 0)
-ridge_multinomial$lambda.1se
-
-plot(ridge_multinomial$glmnet.fit, xvar = "norm", label = TRUE, type.coef = "2norm")
-
-pred_ridge_multinomial <- data.frame(predict(ridge_multinomial$glmnet.fit, newx = as.matrix(trn[-c(1,2)]), s = ridge_multinomial$lambda.1se, type="class"))
-
-confusionMatrix(as.factor(pred_ridge_multinomial[,1]), trn$Group, positive = "DNML1")
-
-coef(ridge_multinomial)
-```
 
 # Multinomial logistic regression with neural networks
 
@@ -227,86 +176,14 @@ confusionMatrix(predict(multi_model), trn$Group, positive = "DNML1")
 varImp(multi_model)
 
 confint(multi_model$finalModel)
-```
-
-
-# Random Forest
-
-```{r}
-set.seed(2024)
-
-search_grid <- expand.grid(
-  mtry = seq(1, 10, by = 1)
-)
-
-rf_model <- train(Group ~ .,
-                  data = trn[-1], 
-                  method = "rf",
-                  tuneGrid = search_grid,
-                  trControl = trainControl(method = "oob"),
-                  ntree = 10000)
-
-confusionMatrix(predict(rf_model), trn$Group, positive = "DNML1")
-plot(rf_model)
-
-
-varImp(rf_model)
-```
-
-# Naive Bayes
-
-```{r}
-search_grid <- expand.grid(
-  usekernel = c(TRUE, FALSE),
-  laplace = c(TRUE, FALSE),
-  adjust = seq(1, 5, by = 1)
-)
-
-train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
-
-nb_model <- train(Group ~ .,
-                  data = trn[-1], 
-                  method = "naive_bayes",
-                  trControl = train_control, 
-                  # preProcess = c("pca"),
-                  tuneGrid = search_grid)
-
-plot(nb_model)
-
-pred_gnb <- predict(nb_model, as.matrix(trn[-c(1,2)]), type = "raw")
-
-confusionMatrix(pred_gnb, trn$Group, positive = "DNM1L")
-
-```
-
-# SVM
-
-```{r}
-set.seed(2024)
-
-library(e1071)
-  
-train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
-
-svm_model <-  train(Group ~ .,
-                  data = trn[-1], 
-                  preProcess = c("pca"),
-                  trControl = train_control, 
-                  method = "svmLinear3")
-  
-
-
-pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
-confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
-
-
 
 # Extract the PCA model
-preproc <- preProcess(trn[-1], method = c("pca"))
+preproc <- preProcess(trn[-c(1,2)], method = c("pca"))
 
-# Transform the original data
-pca_transformed <- predict(preproc, trn[-1])
+
+pca_transformed <- predict(preProcess(trn[-c(1,2)], method = c("pca")), trn[-c(1,2)])
 pca_transformed <- data.frame(pca_transformed, Group = trn$Group)
+
 
 # Create a grid of points in the PCA-transformed space
 x_min <- min(pca_transformed$PC1) - 1
@@ -317,6 +194,59 @@ y_max <- max(pca_transformed$PC2) + 1
 # Generate grid points
 grid <- expand.grid(PC1 = seq(x_min, x_max, length.out = 100),
                     PC2 = seq(y_min, y_max, length.out = 100))
+
+
+# Inverse transform the grid to the original feature space
+inverse_pca <- function(pca_model, pca_data, original_data) {
+  center <- pca_model$mean
+  scale <- pca_model$std
+  rotation <- pca_model$rotation
+  
+  # Calculate the original data matrix
+  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+  
+  # Re-scale and re-center
+  original_matrix <- sweep(original_matrix, 2, scale, `*`)
+  original_matrix <- sweep(original_matrix, 2, center, `+`)
+  
+  return(as.data.frame(original_matrix))
+}
+
+# Get the original feature names (excluding 'Group')
+original_feature_names <- names(trn)[-c(1,2)]
+
+# Perform inverse PCA transformation on the grid
+grid_original <- inverse_pca(preproc, grid, trn[original_feature_names])
+colnames(grid_original) <- original_feature_names
+
+# Predict on the original feature space
+grid_original$Group <- predict(svm_model, grid_original, type = "raw")
+
+
+# Plot the decision boundary
+ggplot() +
+  geom_point(data = pca_transformed, aes(x = PC1, y = PC2, color = Group), size = 2) +
+  geom_tile(data = grid, aes(x = PC1, y = PC2, fill = grid_original$Group), alpha = 0.3) +
+  labs(title = "SVM Decision Boundary with PCA",
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  theme_minimal() 
+
+
+
+
+############################################################################################################################################
+
+# Create a grid of points in the PCA-transformed space
+x_min <- min(pca_transformed$PC3) - 1
+x_max <- max(pca_transformed$PC3) + 1
+y_min <- min(pca_transformed$PC4) - 1
+y_max <- max(pca_transformed$PC4) + 1
+
+# Generate grid points
+grid <- expand.grid(PC3 = seq(x_min, x_max, length.out = 100),
+                    PC4 = seq(y_min, y_max, length.out = 100))
+
 
 # Inverse transform the grid to the original feature space
 inverse_pca <- function(pca_model, pca_data, original_data) {
@@ -346,14 +276,409 @@ grid_original$Group <- predict(svm_model, grid_original, type = "raw")
 
 # Plot the decision boundary
 ggplot() +
+  geom_point(data = pca_transformed, aes(x = PC3, y = PC4, color = Group), size = 2) +
+  geom_tile(data = grid, aes(x = PC3, y = PC4, fill = grid_original$Group), alpha = 0.3) +
+  labs(title = "SVM Decision Boundary with PCA",
+       x = "Principal Component 3",
+       y = "Principal Component 4") +
+  theme_minimal()
+
+```
+
+
+# Random Forest
+
+```{r}
+set.seed(2024)
+
+search_grid <- expand.grid(
+  mtry = seq(1, 4, by = 1)
+)
+
+rf_model <- train(Group ~ .,
+                  data = trn[-1], 
+                  method = "rf",
+                  tuneGrid = search_grid,
+                  preProcess = c("pca"),
+                  trControl = trainControl(method = "oob"),
+                  ntree = 10000)
+
+confusionMatrix(predict(rf_model), trn$Group, positive = "DNML1")
+plot(rf_model)
+
+
+varImp(rf_model)
+
+# Extract the PCA model
+preproc <- preProcess(trn[-c(1,2)], method = c("pca"))
+
+
+pca_transformed <- predict(preProcess(trn[-c(1,2)], method = c("pca")), trn[-c(1,2)])
+pca_transformed <- data.frame(pca_transformed, Group = trn$Group)
+
+
+# Create a grid of points in the PCA-transformed space
+x_min <- min(pca_transformed$PC1) - 1
+x_max <- max(pca_transformed$PC1) + 1
+y_min <- min(pca_transformed$PC2) - 1
+y_max <- max(pca_transformed$PC2) + 1
+
+# Generate grid points
+grid <- expand.grid(PC1 = seq(x_min, x_max, length.out = 100),
+                    PC2 = seq(y_min, y_max, length.out = 100))
+
+
+# Inverse transform the grid to the original feature space
+inverse_pca <- function(pca_model, pca_data, original_data) {
+  center <- pca_model$mean
+  scale <- pca_model$std
+  rotation <- pca_model$rotation
+  
+  # Calculate the original data matrix
+  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+  
+  # Re-scale and re-center
+  original_matrix <- sweep(original_matrix, 2, scale, `*`)
+  original_matrix <- sweep(original_matrix, 2, center, `+`)
+  
+  return(as.data.frame(original_matrix))
+}
+
+# Get the original feature names (excluding 'Group')
+original_feature_names <- names(trn)[-c(1,2)]
+
+# Perform inverse PCA transformation on the grid
+grid_original <- inverse_pca(preproc, grid, trn[original_feature_names])
+colnames(grid_original) <- original_feature_names
+
+# Predict on the original feature space
+grid_original$Group <- predict(rf_model, grid_original, type = "raw")
+
+
+# Plot the decision boundary
+ggplot() +
   geom_point(data = pca_transformed, aes(x = PC1, y = PC2, color = Group), size = 2) +
   geom_tile(data = grid, aes(x = PC1, y = PC2, fill = grid_original$Group), alpha = 0.3) +
   labs(title = "SVM Decision Boundary with PCA",
        x = "Principal Component 1",
        y = "Principal Component 2") +
+  theme_minimal() 
+
+
+
+
+############################################################################################################################################
+
+# Create a grid of points in the PCA-transformed space
+x_min <- min(pca_transformed$PC3) - 1
+x_max <- max(pca_transformed$PC3) + 1
+y_min <- min(pca_transformed$PC4) - 1
+y_max <- max(pca_transformed$PC4) + 1
+
+# Generate grid points
+grid <- expand.grid(PC3 = seq(x_min, x_max, length.out = 100),
+                    PC4 = seq(y_min, y_max, length.out = 100))
+
+
+# Inverse transform the grid to the original feature space
+inverse_pca <- function(pca_model, pca_data, original_data) {
+  center <- pca_model$mean
+  scale <- pca_model$std
+  rotation <- pca_model$rotation
+  
+  # Calculate the original data matrix
+  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+  
+  # Re-scale and re-center
+  original_matrix <- sweep(original_matrix, 2, scale, `*`)
+  original_matrix <- sweep(original_matrix, 2, center, `+`)
+  
+  return(as.data.frame(original_matrix))
+}
+
+# Get the original feature names (excluding 'Group')
+original_feature_names <- names(trn)[-c(1,2)]
+
+# Perform inverse PCA transformation on the grid
+grid_original <- inverse_pca(preproc, grid, trn[original_feature_names])
+colnames(grid_original) <- original_feature_names
+
+# Predict on the original feature space
+grid_original$Group <- predict(rf_model, grid_original, type = "raw")
+
+# Plot the decision boundary
+ggplot() +
+  geom_point(data = pca_transformed, aes(x = PC3, y = PC4, color = Group), size = 2) +
+  geom_tile(data = grid, aes(x = PC3, y = PC4, fill = grid_original$Group), alpha = 0.3) +
+  labs(title = "SVM Decision Boundary with PCA",
+       x = "Principal Component 3",
+       y = "Principal Component 4") +
   theme_minimal()
 
+
+```
+
+# Naive Bayes
+
+```{r}
+search_grid <- expand.grid(
+  usekernel = c(TRUE, FALSE),
+  laplace = c(TRUE, FALSE),
+  adjust = seq(1, 5, by = 1)
+)
+
+train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+nb_model <- train(Group ~ .,
+                  data = trn[-1], 
+                  method = "naive_bayes",
+                  trControl = train_control, 
+                  preProcess = c("pca"),
+                  tuneGrid = search_grid)
+
+plot(nb_model)
+
+pred_gnb <- predict(nb_model, as.matrix(trn[-c(1,2)]), type = "raw")
+
+confusionMatrix(pred_gnb, trn$Group, positive = "DNM1L")
+
+# Extract the PCA model
+preproc <- preProcess(trn[-c(1,2)], method = c("pca"))
+
+
+pca_transformed <- predict(preProcess(trn[-c(1,2)], method = c("pca")), trn[-c(1,2)])
+pca_transformed <- data.frame(pca_transformed, Group = trn$Group)
+
+
+# Create a grid of points in the PCA-transformed space
+x_min <- min(pca_transformed$PC1) - 1
+x_max <- max(pca_transformed$PC1) + 1
+y_min <- min(pca_transformed$PC2) - 1
+y_max <- max(pca_transformed$PC2) + 1
+
+# Generate grid points
+grid <- expand.grid(PC1 = seq(x_min, x_max, length.out = 100),
+                    PC2 = seq(y_min, y_max, length.out = 100))
+
+
+# Inverse transform the grid to the original feature space
+inverse_pca <- function(pca_model, pca_data, original_data) {
+  center <- pca_model$mean
+  scale <- pca_model$std
+  rotation <- pca_model$rotation
+  
+  # Calculate the original data matrix
+  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+  
+  # Re-scale and re-center
+  original_matrix <- sweep(original_matrix, 2, scale, `*`)
+  original_matrix <- sweep(original_matrix, 2, center, `+`)
+  
+  return(as.data.frame(original_matrix))
+}
+
+# Get the original feature names (excluding 'Group')
+original_feature_names <- names(trn)[-c(1,2)]
+
+# Perform inverse PCA transformation on the grid
+grid_original <- inverse_pca(preproc, grid, trn[original_feature_names])
+colnames(grid_original) <- original_feature_names
+
+# Predict on the original feature space
+grid_original$Group <- predict(nb_model, grid_original, type = "raw")
+
+
+# Plot the decision boundary
+ggplot() +
+  geom_point(data = pca_transformed, aes(x = PC1, y = PC2, color = Group), size = 2) +
+  geom_tile(data = grid, aes(x = PC1, y = PC2, fill = grid_original$Group), alpha = 0.3) +
+  labs(title = "SVM Decision Boundary with PCA",
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  theme_minimal() 
+
+
+
+
+############################################################################################################################################
+
+# Create a grid of points in the PCA-transformed space
+x_min <- min(pca_transformed$PC3) - 1
+x_max <- max(pca_transformed$PC3) + 1
+y_min <- min(pca_transformed$PC4) - 1
+y_max <- max(pca_transformed$PC4) + 1
+
+# Generate grid points
+grid <- expand.grid(PC3 = seq(x_min, x_max, length.out = 100),
+                    PC4 = seq(y_min, y_max, length.out = 100))
+
+
+# Inverse transform the grid to the original feature space
+inverse_pca <- function(pca_model, pca_data, original_data) {
+  center <- pca_model$mean
+  scale <- pca_model$std
+  rotation <- pca_model$rotation
+  
+  # Calculate the original data matrix
+  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+  
+  # Re-scale and re-center
+  original_matrix <- sweep(original_matrix, 2, scale, `*`)
+  original_matrix <- sweep(original_matrix, 2, center, `+`)
+  
+  return(as.data.frame(original_matrix))
+}
+
+# Get the original feature names (excluding 'Group')
+original_feature_names <- names(trn)[-c(1,2)]
+
+# Perform inverse PCA transformation on the grid
+grid_original <- inverse_pca(preproc, grid, trn[original_feature_names])
+colnames(grid_original) <- original_feature_names
+
+# Predict on the original feature space
+grid_original$Group <- predict(nb_model, grid_original, type = "raw")
+
+# Plot the decision boundary
+ggplot() +
+  geom_point(data = pca_transformed, aes(x = PC3, y = PC4, color = Group), size = 2) +
+  geom_tile(data = grid, aes(x = PC3, y = PC4, fill = grid_original$Group), alpha = 0.3) +
+  labs(title = "SVM Decision Boundary with PCA",
+       x = "Principal Component 3",
+       y = "Principal Component 4") +
+  theme_minimal()
+
+
+```
+
+# SVM
+
+```{r}
+set.seed(2024)
+
+
+# Define training control with repeated cross-validation
+train_control <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+
+# Preprocess with PCA and train SVM model
+svm_model <- train(Group ~ ., 
+                   data = trn[-1], 
+                   method = "svmLinear",
+                   preProcess = c("pca"),
+                   trControl = train_control,
+                   tuneLength = 10) 
+
+
+pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
+
 confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
+
+# Extract the PCA model
+preproc <- preProcess(trn[-c(1,2)], method = c("pca"))
+
+
+pca_transformed <- predict(preProcess(trn[-c(1,2)], method = c("pca")), trn[-c(1,2)])
+pca_transformed <- data.frame(pca_transformed, Group = trn$Group)
+
+
+# Create a grid of points in the PCA-transformed space
+x_min <- min(pca_transformed$PC1) - 1
+x_max <- max(pca_transformed$PC1) + 1
+y_min <- min(pca_transformed$PC2) - 1
+y_max <- max(pca_transformed$PC2) + 1
+
+# Generate grid points
+grid <- expand.grid(PC1 = seq(x_min, x_max, length.out = 100),
+                    PC2 = seq(y_min, y_max, length.out = 100))
+
+
+# Inverse transform the grid to the original feature space
+inverse_pca <- function(pca_model, pca_data, original_data) {
+  center <- pca_model$mean
+  scale <- pca_model$std
+  rotation <- pca_model$rotation
+  
+  # Calculate the original data matrix
+  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+  
+  # Re-scale and re-center
+  original_matrix <- sweep(original_matrix, 2, scale, `*`)
+  original_matrix <- sweep(original_matrix, 2, center, `+`)
+  
+  return(as.data.frame(original_matrix))
+}
+
+# Get the original feature names (excluding 'Group')
+original_feature_names <- names(trn)[-c(1,2)]
+
+# Perform inverse PCA transformation on the grid
+grid_original <- inverse_pca(preproc, grid, trn[original_feature_names])
+colnames(grid_original) <- original_feature_names
+
+# Predict on the original feature space
+grid_original$Group <- predict(svm_model, grid_original, type = "raw")
+
+
+# Plot the decision boundary
+ggplot() +
+  geom_point(data = pca_transformed, aes(x = PC1, y = PC2, color = Group), size = 2) +
+  geom_tile(data = grid, aes(x = PC1, y = PC2, fill = grid_original$Group), alpha = 0.3) +
+  labs(title = "SVM Decision Boundary with PCA",
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  theme_minimal() 
+
+
+
+
+############################################################################################################################################
+
+# Create a grid of points in the PCA-transformed space
+x_min <- min(pca_transformed$PC3) - 1
+x_max <- max(pca_transformed$PC3) + 1
+y_min <- min(pca_transformed$PC4) - 1
+y_max <- max(pca_transformed$PC4) + 1
+
+# Generate grid points
+grid <- expand.grid(PC3 = seq(x_min, x_max, length.out = 100),
+                    PC4 = seq(y_min, y_max, length.out = 100))
+
+
+# Inverse transform the grid to the original feature space
+inverse_pca <- function(pca_model, pca_data, original_data) {
+  center <- pca_model$mean
+  scale <- pca_model$std
+  rotation <- pca_model$rotation
+  
+  # Calculate the original data matrix
+  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+  
+  # Re-scale and re-center
+  original_matrix <- sweep(original_matrix, 2, scale, `*`)
+  original_matrix <- sweep(original_matrix, 2, center, `+`)
+  
+  return(as.data.frame(original_matrix))
+}
+
+# Get the original feature names (excluding 'Group')
+original_feature_names <- names(trn)[-c(1,2)]
+
+# Perform inverse PCA transformation on the grid
+grid_original <- inverse_pca(preproc, grid, trn[original_feature_names])
+colnames(grid_original) <- original_feature_names
+
+# Predict on the original feature space
+grid_original$Group <- predict(svm_model, grid_original, type = "raw")
+
+# Plot the decision boundary
+ggplot() +
+  geom_point(data = pca_transformed, aes(x = PC3, y = PC4, color = Group), size = 2) +
+  geom_tile(data = grid, aes(x = PC3, y = PC4, fill = grid_original$Group), alpha = 0.3) +
+  labs(title = "SVM Decision Boundary with PCA",
+       x = "Principal Component 3",
+       y = "Principal Component 4") +
+  theme_minimal()
+
 
 ```
 
@@ -362,8 +687,14 @@ confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
 
 ```{r}
 
+# model_list <- list(Neural = multi_model, NB = nb_model, SVM = svm_model)
+# 
+# res <- resamples(model_list)
+# 
+# summary(res)
 
-pred_lasso_multinomial_tst <- predict(svm_model, as.matrix(tst[-c(1,2)]), type = "raw")
+
+pred_lasso_multinomial_tst <- predict(svm_model, tst[-c(1,2)], type = "raw")
 
 confusionMatrix(pred_lasso_multinomial_tst, tst$Group, positive = "DNM1L")
 
@@ -381,8 +712,8 @@ y_min <- min(pca_transformed$PC2) - 1
 y_max <- max(pca_transformed$PC2) + 1
 
 # Generate grid points
-grid <- expand.grid(PC1 = seq(x_min, x_max, length.out = 1000),
-                    PC2 = seq(y_min, y_max, length.out = 1000))
+grid <- expand.grid(PC1 = seq(x_min, x_max, length.out = 100),
+                    PC2 = seq(y_min, y_max, length.out = 100))
 
 # Inverse transform the grid to the original feature space
 inverse_pca <- function(pca_model, pca_data, original_data) {
@@ -419,8 +750,114 @@ ggplot() +
        y = "Principal Component 2") +
   theme_minimal()
 
-confusionMatrix(pred_lasso_multinomial_tst, tst$Group, positive = "DNM1L")
+###############################################################################################################################################
+
+############################################################################################################################################
+
+# Create a grid of points in the PCA-transformed space
+x_min <- min(pca_transformed$PC3) - 1
+x_max <- max(pca_transformed$PC3) + 1
+y_min <- min(pca_transformed$PC4) - 1
+y_max <- max(pca_transformed$PC4) + 1
+
+# Generate grid points
+grid <- expand.grid(PC3 = seq(x_min, x_max, length.out = 100),
+                    PC4 = seq(y_min, y_max, length.out = 100))
+
+
+# Inverse transform the grid to the original feature space
+inverse_pca <- function(pca_model, pca_data, original_data) {
+  center <- pca_model$mean
+  scale <- pca_model$std
+  rotation <- pca_model$rotation
+  
+  # Calculate the original data matrix
+  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+  
+  # Re-scale and re-center
+  original_matrix <- sweep(original_matrix, 2, scale, `*`)
+  original_matrix <- sweep(original_matrix, 2, center, `+`)
+  
+  return(as.data.frame(original_matrix))
+}
+
+# Get the original feature names (excluding 'Group')
+original_feature_names <- names(tst)[-c(1,2)]
+
+# Perform inverse PCA transformation on the grid
+grid_original <- inverse_pca(preproc, grid, tst[original_feature_names])
+colnames(grid_original) <- original_feature_names
+
+# Predict on the original feature space
+grid_original$Group <- predict(svm_model, grid_original, type = "raw")
+
+# Plot the decision boundary
+ggplot() +
+  geom_point(data = pca_transformed, aes(x = PC3, y = PC4, color = Group), size = 2) +
+  geom_tile(data = grid, aes(x = PC3, y = PC4, fill = grid_original$Group), alpha = 0.3) +
+  labs(title = "SVM Decision Boundary with PCA",
+       x = "Principal Component 3",
+       y = "Principal Component 4") +
+  theme_minimal()
 
 ```
 
+```{r}
+
+preproc <- preProcess(tst[-c(1,2)], method = c("pca"), pcaComp = 3)
+
+# Transform the original data
+pca_transformed <- predict(preproc, tst[-c(1,2)])
+pca_transformed <- data.frame(pca_transformed, Group = tst$Group)
+
+# Create a grid of points in the PCA-transformed space
+x_min <- min(pca_transformed$PC1) - 1
+x_max <- max(pca_transformed$PC1) + 1
+y_min <- min(pca_transformed$PC2) - 1
+y_max <- max(pca_transformed$PC2) + 1
+z_min <- min(pca_transformed$PC3) - 1
+z_max <- max(pca_transformed$PC3) + 1
+
+# Generate dense grid points
+grid_points <- expand.grid(PC1 = seq(x_min, x_max, length.out = 50),
+                           PC2 = seq(y_min, y_max, length.out = 50),
+                           PC3 = seq(z_min, z_max, length.out = 50))
+
+# Inverse transform the grid to the original feature space
+inverse_pca <- function(pca_model, pca_data) {
+  center <- pca_model$mean
+  scale <- pca_model$std
+  rotation <- pca_model$rotation
+  
+  # Calculate the original data matrix
+  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+  
+  # Re-scale and re-center
+  original_matrix <- sweep(original_matrix, 2, scale, `*`)
+  original_matrix <- sweep(original_matrix, 2, center, `+`)
+  
+  return(as.data.frame(original_matrix))
+}
+
+# Get the original feature names (excluding 'Group')
+original_feature_names <- names(tst)[-c(1,2)]
+
+# Perform inverse PCA transformation on the grid
+grid_original <- inverse_pca(preproc, grid_points)
+colnames(grid_original) <- original_feature_names
+
+# Predict class probabilities on the original feature space
+grid_original_probs <- predict(svm_model, grid_original, type = "prob")
+
+fig <- plot_ly(pca_transformed, x = ~PC1, y = ~PC2, z = ~PC3, color = ~Group, colors = c('blue', 'red')) %>%
+  add_markers() %>%
+  layout(title = '3D Scatter Plot of First 3 Principal Components',
+         scene = list(xaxis = list(title = 'PC1'),
+                      yaxis = list(title = 'PC2'),
+                      zaxis = list(title = 'PC3')))
+
+# Print the plot
+fig
+
+```
 
