@@ -21,17 +21,7 @@ db <- na.omit(db)
 
 db$ID <- as.factor(db$ID) 
 db$Group <- as.factor(db$Group) 
-# cor(db[,-c(1,2)], method = "pearson")
 
-# 
-# db <- db %>%
-#   pivot_longer(cols = -c(ID, Group), names_to = "Predictor", values_to = "Value") %>%
-#   group_by(ID, Predictor) %>%
-#   summarise( Mean = mean(Value)) %>%
-#   pivot_wider(id_cols = ID, names_from = "Predictor", values_from = "Mean") %>%
-#   mutate(Group = as.factor(ifelse(ID %in% c("20210604", "20210526", "20210409", "20210512", "20220215", "20220411"), "Control", "Disease"))) %>%
-#   select(ID, Group, everything()) %>%
-#   ungroup()
 
 
 ```
@@ -43,13 +33,6 @@ db$Group <- as.factor(db$Group)
 ```{r, message=FALSE, warning=FALSE}
 long_db <- db %>%
   pivot_longer(cols = -c(ID, Group), names_to = "Predictor", values_to = "Value")
-
-# long_db %>%
-#   ggplot(aes(x = ID, y = Value, fill = Group)) +
-#   geom_boxplot() +
-#   facet_wrap(~ Predictor, scales = "free_y") +
-#   scale_fill_manual(values = c("#6996e3", "#dd5129")) +
-#   theme_bw()
 
 long_db %>%
   ggplot(aes(x = Group, y = Value, fill = Group)) +
@@ -101,36 +84,29 @@ db %>%
 
 ```{r}
 
-pca_res <- prcomp(db[,-c(1,2)], scale. = TRUE)
 
-# autoplot(pca_res, data = db, color = "ID", size = 3) +
-#   theme_classic() 
+pca_res <- prcomp(db[,-c(1,2)], scale. = TRUE)
 
 
 autoplot(pca_res, data = db, color = "Group", size = 3, loadings = TRUE, loadings.label = TRUE) +
   theme_classic() + 
-  scale_color_manual(values = c("#6996e3", "#dd5129", "#2b9b81"))
+  scale_color_manual(values = c("#a39b9b",  "#7babdb", "#f2de79"))
 
 autoplot(pca_res, data = db, color = "Group", label = TRUE, shape = FALSE, label.label = "ID") +
   theme_classic() + 
-  scale_color_manual(values = c("#6996e3", "#dd5129", "#2b9b81"))
+  scale_color_manual(values = c("#a39b9b",  "#7babdb", "#f2de79"))
   
 
 ```
+
+
 # Data Split
 
 ```{r}
 set.seed(2024)
 
-db_ml <- db
+db_ml <- db 
 
-# db_ml <- db %>%
-#   select(-c(MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio))
-
-# db_ml <- db %>%
-#   select(-c(MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio))
-
-# trnIndex <- createDataPartition(db_ml$ID, p = 0.7, list = FALSE)
 
 trnIndex <- createDataPartition(db_ml$Group, p = 0.7, list = FALSE)
 
@@ -140,7 +116,6 @@ tst <- db_ml[-trnIndex,]
 trn[-c(1,2)] <- scale(log2(trn[-c(1,2)]))
 tst[-c(1,2)] <- scale(log2(tst[-c(1,2)]))
 ```
-
 
 
 
@@ -220,19 +195,19 @@ grid_original <- inverse_pca(preproc, grid, trn[original_feature_names])
 colnames(grid_original) <- original_feature_names
 
 # Predict on the original feature space
-grid_original$Group <- predict(svm_model, grid_original, type = "raw")
+grid_original$Group <- predict(multi_model, grid_original, type = "raw")
 
 
 # Plot the decision boundary
 ggplot() +
   geom_point(data = pca_transformed, aes(x = PC1, y = PC2, color = Group), size = 2) +
   geom_tile(data = grid, aes(x = PC1, y = PC2, fill = grid_original$Group), alpha = 0.3) +
-  labs(title = "SVM Decision Boundary with PCA",
+  labs(title = "Multinomial Decision Boundary with PCA",
        x = "Principal Component 1",
        y = "Principal Component 2") +
-  theme_minimal() 
-
-
+  theme_minimal() +
+  scale_color_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+  scale_fill_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
 
 
 ############################################################################################################################################
@@ -272,16 +247,18 @@ grid_original <- inverse_pca(preproc, grid, trn[original_feature_names])
 colnames(grid_original) <- original_feature_names
 
 # Predict on the original feature space
-grid_original$Group <- predict(svm_model, grid_original, type = "raw")
+grid_original$Group <- predict(multi_model, grid_original, type = "raw")
 
 # Plot the decision boundary
 ggplot() +
   geom_point(data = pca_transformed, aes(x = PC3, y = PC4, color = Group), size = 2) +
   geom_tile(data = grid, aes(x = PC3, y = PC4, fill = grid_original$Group), alpha = 0.3) +
-  labs(title = "SVM Decision Boundary with PCA",
+  labs(title = "Multinomial Decision Boundary with PCA",
        x = "Principal Component 3",
        y = "Principal Component 4") +
-  theme_minimal()
+  theme_minimal() +
+  scale_color_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+  scale_fill_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
 
 ```
 
@@ -298,8 +275,8 @@ search_grid <- expand.grid(
 rf_model <- train(Group ~ .,
                   data = trn[-1], 
                   method = "rf",
-                  tuneGrid = search_grid,
                   preProcess = c("pca"),
+                  tuneGrid = search_grid,
                   trControl = trainControl(method = "oob"),
                   ntree = 10000)
 
@@ -359,12 +336,12 @@ grid_original$Group <- predict(rf_model, grid_original, type = "raw")
 ggplot() +
   geom_point(data = pca_transformed, aes(x = PC1, y = PC2, color = Group), size = 2) +
   geom_tile(data = grid, aes(x = PC1, y = PC2, fill = grid_original$Group), alpha = 0.3) +
-  labs(title = "SVM Decision Boundary with PCA",
+  labs(title = "Random Forest Decision Boundary with PCA",
        x = "Principal Component 1",
        y = "Principal Component 2") +
-  theme_minimal() 
-
-
+  theme_minimal()  +
+  scale_color_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+  scale_fill_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
 
 
 ############################################################################################################################################
@@ -410,10 +387,12 @@ grid_original$Group <- predict(rf_model, grid_original, type = "raw")
 ggplot() +
   geom_point(data = pca_transformed, aes(x = PC3, y = PC4, color = Group), size = 2) +
   geom_tile(data = grid, aes(x = PC3, y = PC4, fill = grid_original$Group), alpha = 0.3) +
-  labs(title = "SVM Decision Boundary with PCA",
+  labs(title = "Random Forest Decision Boundary with PCA",
        x = "Principal Component 3",
        y = "Principal Component 4") +
-  theme_minimal()
+  theme_minimal() +
+  scale_color_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+  scale_fill_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
 
 
 ```
@@ -421,6 +400,8 @@ ggplot() +
 # Naive Bayes
 
 ```{r}
+
+set.seed(2024)
 search_grid <- expand.grid(
   usekernel = c(TRUE, FALSE),
   laplace = c(TRUE, FALSE),
@@ -492,12 +473,12 @@ grid_original$Group <- predict(nb_model, grid_original, type = "raw")
 ggplot() +
   geom_point(data = pca_transformed, aes(x = PC1, y = PC2, color = Group), size = 2) +
   geom_tile(data = grid, aes(x = PC1, y = PC2, fill = grid_original$Group), alpha = 0.3) +
-  labs(title = "SVM Decision Boundary with PCA",
+  labs(title = "Naive Bayes Decision Boundary with PCA",
        x = "Principal Component 1",
        y = "Principal Component 2") +
-  theme_minimal() 
-
-
+  theme_minimal()  +
+  scale_color_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+  scale_fill_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
 
 
 ############################################################################################################################################
@@ -543,10 +524,12 @@ grid_original$Group <- predict(nb_model, grid_original, type = "raw")
 ggplot() +
   geom_point(data = pca_transformed, aes(x = PC3, y = PC4, color = Group), size = 2) +
   geom_tile(data = grid, aes(x = PC3, y = PC4, fill = grid_original$Group), alpha = 0.3) +
-  labs(title = "SVM Decision Boundary with PCA",
+  labs(title = "Naive Bayes Decision Boundary with PCA",
        x = "Principal Component 3",
        y = "Principal Component 4") +
-  theme_minimal()
+  theme_minimal() +
+  scale_color_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+  scale_fill_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
 
 
 ```
@@ -567,6 +550,8 @@ svm_model <- train(Group ~ .,
                    preProcess = c("pca"),
                    trControl = train_control,
                    tuneLength = 10) 
+
+svm_model$finalModel
 
 
 pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
@@ -626,7 +611,9 @@ ggplot() +
   labs(title = "SVM Decision Boundary with PCA",
        x = "Principal Component 1",
        y = "Principal Component 2") +
-  theme_minimal() 
+  theme_minimal()  +
+  scale_color_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+  scale_fill_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
 
 
 
@@ -677,7 +664,9 @@ ggplot() +
   labs(title = "SVM Decision Boundary with PCA",
        x = "Principal Component 3",
        y = "Principal Component 4") +
-  theme_minimal()
+  theme_minimal()  +
+  scale_color_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+  scale_fill_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
 
 
 ```
@@ -687,11 +676,11 @@ ggplot() +
 
 ```{r}
 
-# model_list <- list(Neural = multi_model, NB = nb_model, SVM = svm_model)
-# 
-# res <- resamples(model_list)
-# 
-# summary(res)
+model_list <- list(Neural = multi_model, NB = nb_model, SVM = svm_model)
+
+res <- resamples(model_list)
+
+summary(res)
 
 
 pred_lasso_multinomial_tst <- predict(svm_model, tst[-c(1,2)], type = "raw")
@@ -739,7 +728,7 @@ grid_original <- inverse_pca(preproc, grid, tst[original_feature_names])
 colnames(grid_original) <- original_feature_names
 
 # Predict on the original feature space
-grid_original$Group <- predict(svm_model, grid_original, type = "raw")
+grid_original$Group <- predict(multi_model, grid_original, type = "raw")
 
 # Plot the decision boundary
 ggplot() +
@@ -748,11 +737,12 @@ ggplot() +
   labs(title = "SVM Decision Boundary with PCA",
        x = "Principal Component 1",
        y = "Principal Component 2") +
-  theme_minimal()
+  theme_minimal()  +
+  scale_color_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+  scale_fill_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
 
 ###############################################################################################################################################
 
-############################################################################################################################################
 
 # Create a grid of points in the PCA-transformed space
 x_min <- min(pca_transformed$PC3) - 1
@@ -789,7 +779,7 @@ grid_original <- inverse_pca(preproc, grid, tst[original_feature_names])
 colnames(grid_original) <- original_feature_names
 
 # Predict on the original feature space
-grid_original$Group <- predict(svm_model, grid_original, type = "raw")
+grid_original$Group <- predict(multi_model, grid_original, type = "raw")
 
 # Plot the decision boundary
 ggplot() +
@@ -798,66 +788,12 @@ ggplot() +
   labs(title = "SVM Decision Boundary with PCA",
        x = "Principal Component 3",
        y = "Principal Component 4") +
-  theme_minimal()
+  theme_minimal() +
+  scale_color_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+  scale_fill_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
+
+
 
 ```
 
-```{r}
-
-preproc <- preProcess(tst[-c(1,2)], method = c("pca"), pcaComp = 3)
-
-# Transform the original data
-pca_transformed <- predict(preproc, tst[-c(1,2)])
-pca_transformed <- data.frame(pca_transformed, Group = tst$Group)
-
-# Create a grid of points in the PCA-transformed space
-x_min <- min(pca_transformed$PC1) - 1
-x_max <- max(pca_transformed$PC1) + 1
-y_min <- min(pca_transformed$PC2) - 1
-y_max <- max(pca_transformed$PC2) + 1
-z_min <- min(pca_transformed$PC3) - 1
-z_max <- max(pca_transformed$PC3) + 1
-
-# Generate dense grid points
-grid_points <- expand.grid(PC1 = seq(x_min, x_max, length.out = 50),
-                           PC2 = seq(y_min, y_max, length.out = 50),
-                           PC3 = seq(z_min, z_max, length.out = 50))
-
-# Inverse transform the grid to the original feature space
-inverse_pca <- function(pca_model, pca_data) {
-  center <- pca_model$mean
-  scale <- pca_model$std
-  rotation <- pca_model$rotation
-  
-  # Calculate the original data matrix
-  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
-  
-  # Re-scale and re-center
-  original_matrix <- sweep(original_matrix, 2, scale, `*`)
-  original_matrix <- sweep(original_matrix, 2, center, `+`)
-  
-  return(as.data.frame(original_matrix))
-}
-
-# Get the original feature names (excluding 'Group')
-original_feature_names <- names(tst)[-c(1,2)]
-
-# Perform inverse PCA transformation on the grid
-grid_original <- inverse_pca(preproc, grid_points)
-colnames(grid_original) <- original_feature_names
-
-# Predict class probabilities on the original feature space
-grid_original_probs <- predict(svm_model, grid_original, type = "prob")
-
-fig <- plot_ly(pca_transformed, x = ~PC1, y = ~PC2, z = ~PC3, color = ~Group, colors = c('blue', 'red')) %>%
-  add_markers() %>%
-  layout(title = '3D Scatter Plot of First 3 Principal Components',
-         scene = list(xaxis = list(title = 'PC1'),
-                      yaxis = list(title = 'PC2'),
-                      zaxis = list(title = 'PC3')))
-
-# Print the plot
-fig
-
-```
 
