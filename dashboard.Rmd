@@ -23,7 +23,6 @@ library(ggfortify)
 library(GGally)
 library(glmnet)
 library(plotly)
-
 library(tidyverse)
 
 
@@ -35,6 +34,11 @@ db$Group <- as.factor(db$Group)
 long_db <- db %>%
   pivot_longer(cols = -c(ID, Group), names_to = "Predictor", values_to = "Value")
 ```
+
+```{r include=FALSE}
+
+```
+
 
 ## Column {.tabset data-width="650"}
 ---------------------------------------------------------------------

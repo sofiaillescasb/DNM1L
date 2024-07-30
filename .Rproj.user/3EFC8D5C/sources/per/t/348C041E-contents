@@ -280,8 +280,7 @@ varImp(rf_model)
 
 
 make_bound_plot(rf_model,trn, 1, 2, "Random Forest")
-make_bound_plot(rf_model,trn, 1, 3, "Random Forest")
-make_bound_plot(rf_model,trn, 2, 3, "Random Forest")
+
 ```
 
 # Naive Bayes
