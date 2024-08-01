@@ -2,17 +2,17 @@
 title: "DNML1"
 output: 
   flexdashboard::flex_dashboard:
-    vertical_layout: fill
+    runtime: shiny
+    vertical_layout: scroll
     orientation: columns
     theme:
       bg: "#ffffff"
       fg: "#180E3F"
-      primary: "#ffffff"
+      primary: "#9FA8DA"
       base_font:
         google: Prompt
       code_font:
         google: JetBrains Mono
-
 ---
 
 ```{r setup, include=FALSE}
@@ -26,17 +26,17 @@ library(glmnet)
 library(Hmisc)
 library(plotly)
 library(knitr)
+library(shiny)
 library(tidyverse)
 # Install thematic and un-comment for themed static plots (i.e., ggplot2)
 # thematic::thematic_rmd()
 ```
 
-
 ```{r include=FALSE}
 db <- read_excel(here("data/dataform.xlsx"))
 db <- na.omit(db)
 
-db$ID <- as.factor(db$ID) 
+db$ID <- as.factor(paste0(db$ID, ".", seq(1,length(db$ID)))) 
 db$Group <- as.factor(db$Group) 
 
 
@@ -49,62 +49,72 @@ long_db <- db %>%
 
 ```
 
+# First Look {.tabset}
+===========================================================
 
-First Look
-==========================================================================================================================
+## sidebar {.sidebar}
+------------------------------------------------------------
 
-Column
--------------------------------------
-    
+```{r}
+
+selectInput("geomtype", "Select Plot Type", choices = c("Box plot", "Density plot"))
+
+```
+
+## Column
+------------------------------------------------------------
 
 ### Boxplot
 
-
 ```{r}
-bx <- long_db %>%
-  ggplot(aes(x = Group, y = Value, fill = Group)) +
-  geom_boxplot() +
-  facet_wrap(~ Predictor, scales = "free_y") +
-  scale_fill_manual(values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
-  theme_classic()
 
-ggplotly(bx)
+
+
+renderPlotly({
+  plt_type <- reactive(as.character(input$geomtype))
+  
+  p <- reactive({
+    if (plt_type() == "Box plot") {
+      long_db %>%
+        ggplot(aes(x = Group, y = Value, fill = Group)) +
+        geom_boxplot() +
+        facet_wrap(~ Predictor, scales = "free") +
+        scale_fill_manual(values = c("#a39b9b", "#67c7c5", "#f2de79")) +
+        theme_classic() +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), legend.position = "none")
+    } else {
+      long_db %>%
+        ggplot(aes(x = Value, fill = Group)) +
+        geom_density(alpha = 0.6) +
+        facet_wrap(~ Predictor, scales = "free") +
+        scale_fill_manual(values = c("#a39b9b", "#67c7c5", "#f2de79")) +
+        theme_classic() 
+    }
+  })
+  
+  ggplotly(p())
+})
+
 ```
 
-Column
--------------------------------------
-    
+ Variables are intercorrelated {.tabset}
+=====================================================================
 
-### Density
+sidebar {.sidebar}
+------------------------------------------------------------
 
 ```{r}
-dens <- long_db %>%
-  ggplot(aes(x = Value, fill = Group)) +
-  geom_density(alpha = 0.6) +
-  facet_wrap(~ Predictor, scales = "free") +
-  scale_fill_manual(values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
-  theme_classic()
-
-ggplotly(dens)
-
+selectInput("plot", "Select Plot Type", choices = c("Correlation Matrix", "Hierarchical clustering"))
 ```
 
-
-Variables are intercorrelated
-==========================================================================================================================
-
-
-Variable Correlation
--------------------------------------
-    
+Column {data-width="650"}
+------------------------------------------------------------
 
 ```{r}
 var_cor <- db %>%
   select(-c(ID, Group)) %>%
   ggcorr(label = TRUE, low = "#5499C7", high = "#BE0461", size =3) 
 
-
-ggplotly(var_cor)
 
 vclus <- varclus(as.matrix(db[-c(1,2)]))
 
@@ -117,20 +127,31 @@ db_res <- db %>%
   select(c("ID", "Group", red_vars$In))
 
 
-
 ```
 
-
-Variable Correlation HC
--------------------------------------
 
 ```{r}
-plot(vclus)
+#Variable Correlation HC
+uiOutput("plot_ui")
+
+output$plot_ui <- renderUI({
+  if (input$plot == "Correlation Matrix") {
+    plotlyOutput("plotly_plot")
+  } else {
+    plotOutput("ggplot_plot")
+  }
+})
+
+output$plotly_plot <- renderPlotly({
+  ggplotly(var_cor)
+})
+
+output$ggplot_plot <- renderPlot({
+  plot(vclus)
+})
+
+
 ```
-
-
-Neural Network Multinomial Regression 
-==========================================================================================================================
 
 
 ```{r include=FALSE}
@@ -149,93 +170,98 @@ tst[-c(1,2)] <- scale(log2(tst[-c(1,2)]))
 
 ```
 
+
 ```{r include = FALSE}
 set.seed(2024)
 
 train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
 
-
-train_model <-  function(dat, method, search_grid=NULL) {
+train_model <- function(dat, method, search_grid=NULL) {
   set.seed(2024)
   
   mdl <- train(Group ~ .,
-                  data = dat[-1], 
-                  method = method,
-                  tuneGrid = search_grid,
-                  trControl = train_control,
-                  trace = FALSE)
+               data = dat[-1], 
+               method = method,
+               tuneGrid = search_grid,
+               trControl = train_control,
+               trace = FALSE)
   
   return(mdl)
 }
-  
-
 
 make_bound_plot <- function(mod, dat, pcx = 1, pcy = 2, alg) {
+  set.seed(2024)  # Ensure reproducibility in PCA transformation
 
-preproc <- preProcess(dat[-c(1,2)], method = c("pca"))
+  preproc <- preProcess(dat[-c(1,2)], method = c("pca"))
+  pca_transformed <- predict(preproc, dat[-c(1,2)])
+  pca_transformed <- data.frame(pca_transformed, Reference = dat$Group, ID = dat$ID)
 
-pca_transformed <- predict(preproc, dat[-c(1,2)])
-pca_transformed <- data.frame(pca_transformed, Group = dat$Group)
+  colnames(pca_transformed)[pcx] <- "X"
+  colnames(pca_transformed)[pcy] <- "Y"
 
-colnames(pca_transformed)[pcx] <- "X"
-colnames(pca_transformed)[pcy] <- "Y"
+  # Create a grid of points in the PCA-transformed space
+  x_min <- min(pca_transformed$X) - 1
+  x_max <- max(pca_transformed$X) + 1
+  y_min <- min(pca_transformed$Y) - 1
+  y_max <- max(pca_transformed$Y) + 1
 
-# Create a grid of points in the PCA-transformed space
-x_min <- min(pca_transformed$X) - 1
-x_max <- max(pca_transformed$X) + 1
-y_min <- min(pca_transformed$Y) - 1
-y_max <- max(pca_transformed$Y) + 1
+  # Generate grid points
+  grid <- expand.grid(X = seq(x_min, x_max, length.out = 100),
+                      Y = seq(y_min, y_max, length.out = 100))
 
-# Generate grid points
-grid <- expand.grid(X = seq(x_min, x_max, length.out = 100),
-                    Y = seq(y_min, y_max, length.out = 100))
+  # Combine the grid with zeros for other components
+  grid_full <- data.frame(matrix(0, nrow = nrow(grid), ncol = ncol(pca_transformed)-2))
+  colnames(grid_full) <- colnames(pca_transformed)[-c(ncol(pca_transformed)-1, ncol(pca_transformed))]
+  grid_full[, c(pcx, pcy)] <- grid
+
+  # Inverse transform the grid to the original feature space
+  inverse_pca <- function(pca_model, pca_data) {
+    center <- pca_model$mean
+    scale <- pca_model$std
+    rotation <- pca_model$rotation
+
+    # Calculate the original data matrix
+    original_matrix <- as.matrix(pca_data) %*% t(rotation)
+
+    # Re-scale and re-center
+    original_matrix <- sweep(original_matrix, 2, scale, `*`)
+    original_matrix <- sweep(original_matrix, 2, center, `+`)
+
+    return(as.data.frame(original_matrix))
+  }
+
+  # Perform inverse PCA transformation on the grid
+  grid_original <- inverse_pca(preproc, grid_full)
+  colnames(grid_original) <- colnames(dat[-c(1,2)])
+
+  # Predict on the original feature space
+  grid_original$Prediction <- predict(mod, grid_original, type = "raw")
+  grid$Prediction <- grid_original$Prediction
+  labels_df <- data.frame(ID = dat$ID, Reference = dat$Group)
 
 
-# Inverse transform the grid to the original feature space
-inverse_pca <- function(pca_model, pca_data, original_data) {
-  center <- pca_model$mean
-  scale <- pca_model$std
-  rotation <- pca_model$rotation
+  # Plot the decision boundary
+  p = ggplot() +
+    geom_tile(data = grid, aes(x = X, y = Y, fill = Prediction), alpha = 0.3) +
+    geom_point(data = pca_transformed, aes(x = X, y = Y, color = Reference,  ID = ID), size = 2) +
+    labs(title = paste(alg, "Decision Boundary with PCA"),
+         x = paste("Principal Component", pcx),
+         y = paste("Principal Component", pcy)) +
+    theme_minimal() +
+    scale_color_manual(labels = c("Control", "DNML1", "OTHERMIT"), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+    scale_fill_manual(labels = c("Control", "DNML1", "OTHERMIT"), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+    theme(legend.position = "none")
   
-  # Calculate the original data matrix
-  original_matrix <- as.matrix(pca_data) %*% t(rotation[, 1:ncol(pca_data)])
+    ggplotly(p, tooltip = c("color", "ID", "fill"))
+    
   
-  # Re-scale and re-center
-  original_matrix <- sweep(original_matrix, 2, scale, `*`)
-  original_matrix <- sweep(original_matrix, 2, center, `+`)
-  
-  return(as.data.frame(original_matrix))
 }
-
-# Get the original feature names (excluding 'Group')
-original_feature_names <- names(dat)[-c(1,2)]
-
-# Perform inverse PCA transformation on the grid
-grid_original <- inverse_pca(preproc, grid, dat[original_feature_names])
-colnames(grid_original) <- original_feature_names
-
-# Predict on the original feature space
-grid_original$Group <- predict(mod, grid_original, type = "raw")
-
-
-# Plot the decision boundary
-ggplot() +
-  geom_point(data = pca_transformed, aes(x = X, y = Y, color = Group), size = 2) +
-  geom_tile(data = grid, aes(x = X, y = Y, fill = grid_original$Group), alpha = 0.3) +
-  labs(title = paste(alg, "Decision Boundary with PCA"),
-       x = paste("Principal Component", pcx),
-       y = paste("Principal Component", pcy)) +
-  theme_minimal() +
-  scale_color_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
-  scale_fill_manual(labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
-}
-
 
 ```
 
 
-
-
+Neural Network Multinomial Regression {.tabset}
+=======================================================================
 
 ```{r}
 set.seed(2024)
@@ -248,8 +274,6 @@ search_grid <- expand.grid(
 multi_model <- train_model(trn, "multinom", search_grid)
 
 
-
-
 pred_multi_model <- data.frame(Prediction = predict(multi_model, newx = as.matrix(trn[-c(1,2)]), type="raw"))
 
 trn_class_res <- data.frame(ID = trn$ID, Prediction = pred_multi_model, Reference = trn$Group)
@@ -257,48 +281,117 @@ trn_class_res <- data.frame(ID = trn$ID, Prediction = pred_multi_model, Referenc
 cfm <- confusionMatrix(predict(multi_model), trn$Group, positive = "DNML1")
 
 
+```
+
+
+
+Sidebar {.sidebar}
+------------------------------------------------------------
+
+```{r}
+
+selectInput("xpc", "Select principal component for x-axis:", choices = c(1, 2, 3), selected = 1)
+selectInput("ypc", "Select principal component for y-axis:", choices = c(1, 2, 3), selected = 2)
+
+```
+
+
+Column {data-width="650"}
+------------------------------------------------------------
+
+```{r}
+
+uiOutput("plot_ui")
+
+output$plot_ui <- renderUI({
+  plotlyOutput("plotly_plot")
+})
+
+output$plotly_plot <- renderPlotly({
+  make_bound_plot(multi_model, trn, as.integer(input$xpc), as.integer(input$ypc), "Neural Network")
+})
 
 
 ```
 
 
-Plot
--------------------------------------
+Tables {data-width="350"}
+------------------------------------------------------------
+
+### Tables
 
 ```{r}
-make_bound_plot(multi_model, trn, 1, 2, "Neural Network")
-
-```
-
-Tables
--------------------------------------
-
-
-```{r}
+knitr::kable(cfm$table)
 knitr::kable(varImp(multi_model)[1])
 ```
 
-
+Random Forest {.tabset}
+====================================================================
 
 ```{r}
+set.seed(2024)
 
+search_grid <- expand.grid(
+  mtry = seq(1, 4, by = 1)
+)
+
+rf_model <- train_model(trn, "rf", search_grid)
+
+cfm <- confusionMatrix(predict(rf_model), trn$Group, positive = "DNML1")
+
+
+```
+
+Sidebar {.sidebar}
+------------------------------------------------------------
+
+```{r}
+selectInput("xpc", "Select principal component for x-axis:", choices = c(1, 2, 3), selected = 1)
+selectInput("ypc", "Select principal component for y-axis:", choices = c(1, 2, 3), selected = 2)
+```
+
+
+Column {data-width="650"}
+------------------------------------------------------------
+ 
+```{r}
+uiOutput("plot_ui")
+
+output$plot_ui <- renderUI({
+  plotlyOutput("plotly_plot")
+})
+
+output$plotly_plot <- renderPlotly({
+  make_bound_plot(rf_model, trn, as.integer(input$xpc), as.integer(input$ypc), "Neural Network")
+})
+```
+ 
+Tables {data-width="350"}
+------------------------------------------------------------
+ 
+```{r}
 knitr::kable(cfm$table)
-
+knitr::kable(varImp(rf_model)[1])
 ```
+ 
 
-
-
-Random Forest
-==========================================================================================================================
+# SVM
 
 ```{r}
+set.seed(2024)
 
+
+
+# Preprocess with PCA and train SVM model
+svm_model <- train_model(trn, "svmLinear")
+
+
+
+pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
+
+confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
+
+make_bound_plot(svm_model, trn, 1,2, "SVM")
+make_bound_plot(svm_model, trn, 1,3, "SVM")
+make_bound_plot(svm_model, trn, 2,3, "SVM")
 ```
-
-SVM
-==========================================================================================================================
-
-```{r}
-
-```
-

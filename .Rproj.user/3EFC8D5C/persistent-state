@@ -1,6 +1,6 @@
 build-last-errors="[]"
-build-last-errors-base-dir=""
-build-last-outputs="[]"
+build-last-errors-base-dir="C:/Users/killescas/OneDrive - San Juan de Dios/Desktop/GitHub/DNM1L/scripts/"
+build-last-outputs="[{\"type\":0,\"output\":\"==> Testing Shiny application using 'shinytest'\\n\\n\"},{\"type\":2,\"output\":\"IMPORTANT! shinytest is deprecated and may not work with shiny>1.8.1.1.\\r\\nPlease switch to shinytest2.\\r\\nSee https://rstudio.github.io/shinytest2/articles/z-migration.html\\r\\n\"},{\"type\":2,\"output\":\"Error in `app_path()`:\\r\\n! `appDir` doesn't contain 'app.R', 'server.R', or exactly one '.Rmd'\\r\\nBacktrace:\\r\\n    ▆\\r\\n 1. └─shinytest::testApp(\\\"C:/Users/killescas/OneDrive - San Juan de Dios/Desktop/GitHub/DNM1L/scripts\\\")\\r\\n 2.   └─shinytest:::app_path(appDir, \\\"appDir\\\")\\r\\n 3.     └─rlang::abort(paste0(\\\"`\\\", arg, \\\"` doesn't contain 'app.R', 'server.R', or exactly one '.Rmd'\\\"))\\r\\nWarning message:\\r\\npackage 'shinytest' was built under R version 4.4.1 \\r\\nExecution halted\\r\\n\"},{\"type\":2,\"output\":\"\\nExited with status 1.\\n\\n\"}]"
 compile_pdf_state="{\"tab_visible\":false,\"running\":false,\"target_file\":\"\",\"output\":\"\",\"errors\":[]}"
 files.monitored-path=""
 find-in-files-state="{\"handle\":\"\",\"input\":\"\",\"path\":\"\",\"regex\":false,\"ignoreCase\":false,\"results\":{\"file\":[],\"line\":[],\"lineValue\":[],\"matchOn\":[],\"matchOff\":[],\"replaceMatchOn\":[],\"replaceMatchOff\":[]},\"running\":false,\"replace\":false,\"preview\":false,\"gitFlag\":false,\"replacePattern\":\"\"}"
