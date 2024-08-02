@@ -212,7 +212,7 @@ make_bound_plot <- function(mod, dat, pcx = 1, pcy = 2, alg) {
          x = paste("Principal Component", pcx),
          y = paste("Principal Component", pcy)) +
     theme_minimal() +
-    scale_color_manual(name = "Real", labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+    scale_color_manual(name = "Reference", labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
     scale_fill_manual(name = "Prediction", labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
 }
 
@@ -309,7 +309,7 @@ make_bound_plot(svm_model, trn, 2,3, "SVM")
 ```{r}
 set.seed(2024)
 
-model_list <- list(Neural = multi_model, NB = nb_model, SVM = svm_model, RF = rf_model)
+model_list <- list(Neural = multi_model, SVM = svm_model, RF = rf_model)
 
 res <- resamples(model_list)
 

@@ -2,81 +2,358 @@
 title: "DNM1L Classification"
 output: 
   flexdashboard::flex_dashboard:
-      theme: 
-        version: 4
-        bootswatch: minty
-      orientation: columns
-      vertical_layout: fill
+    vertical_layout: scroll
+    orientation: columns
+    theme:
+      bg: "#ffffff"
+      fg: "#180E3F"
+      primary: "#9FA8DA"
+      base_font:
+        google: Prompt
+      code_font:
+        google: JetBrains Mono
     
 ---
+---
+title: "R Notebook"
+output: html_notebook
+---
 
-```{r setup, include=FALSE}
-library(flexdashboard)
-library(thematic)
-# Install thematic and un-comment for themed static plots (i.e., ggplot2)
-# thematic::thematic_rmd()
 
+```{r include=FALSE}
 library(here)
 library(caret)
 library(readxl)
 library(ggfortify)
 library(GGally)
 library(glmnet)
-library(plotly)
+library(Hmisc)
 library(tidyverse)
+```
 
 
+```{r read_data}
 db <- read_excel(here("data/dataform.xlsx"))
 db <- na.omit(db)
 
 db$ID <- as.factor(db$ID) 
 db$Group <- as.factor(db$Group) 
+
+#Removing redundant variables:
+
+colnames(db)
+
+db <- db %>%
+  select(-c("MitoCount", "TotArea", "Bcount", "TotPerim", "TotBLength", "Bjunct", "BEndP"))
+
+```
+
+
+
+# Visualization
+
+```{r, message=FALSE, warning=FALSE}
 long_db <- db %>%
   pivot_longer(cols = -c(ID, Group), names_to = "Predictor", values_to = "Value")
-```
 
-```{r include=FALSE}
-
-```
-
-
-## Column {.tabset data-width="650"}
----------------------------------------------------------------------
-
-### Chart A
-
-```{r}
-
-p <- long_db %>%
+long_db %>%
   ggplot(aes(x = Group, y = Value, fill = Group)) +
   geom_boxplot() +
   facet_wrap(~ Predictor, scales = "free_y") +
-  scale_fill_manual(values = c("#6996e3", "#dd5129", "#2b9b81")) +
+  scale_fill_manual(values = c("#a39b9b", "#67c7c5", "#f2de79")) +
   theme_classic()
 
-ggplotly(p)
+long_db %>%
+  ggplot(aes(x = Value, fill = Group)) +
+  geom_density(alpha = 0.6) +
+  facet_wrap(~ Predictor, scales = "free") +
+  scale_fill_manual(values = c("#a39b9b", "#67c7c5", "#f2de79")) +
+  theme_classic()
+
 
 ```
 
-### Chart B
+
+# PCA
 
 ```{r}
 
+red_vars <- redun(as.matrix(db[-c(1,2)]))
+
+db_res <- db %>%
+  select(c("ID", "Group", red_vars$In))
+
+db_res %>%
+  select(-c(ID, Group)) %>%
+  ggpairs() 
+
+  
+
 ```
 
-## Column {data-width="350"}
 
+
+
+```{r}
+set.seed(2024)
+
+db_ml <- db_res 
+
+
+trnIndex <- createDataPartition(db_ml$Group, p = 0.7, list = FALSE)
+
+trn <- db_ml[trnIndex,]
+tst <- db_ml[-trnIndex,]
+
+trn[-c(1,2)] <- scale(log2(trn[-c(1,2)]))
+tst[-c(1,2)] <- scale(log2(tst[-c(1,2)]))
+
+
+```
+
+
+
+
+```{r}
+
+set.seed(2024)
+
+train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+train_model <- function(dat, method, search_grid=NULL) {
+  set.seed(2024)
+  
+  mdl <- train(Group ~ .,
+               data = dat[-1], 
+               method = method,
+               tuneGrid = search_grid,
+               trControl = train_control,
+               trace = FALSE)
+  
+  return(mdl)
+}
+
+make_bound_plot <- function(mod, dat, pcx = 1, pcy = 2, alg) {
+  set.seed(2024)  # Ensure reproducibility in PCA transformation
+
+  preproc <- preProcess(dat[-c(1,2)], method = c("pca"))
+  pca_transformed <- predict(preproc, dat[-c(1,2)])
+  pca_transformed <- data.frame(pca_transformed, Group = dat$Group)
+
+  colnames(pca_transformed)[pcx] <- "X"
+  colnames(pca_transformed)[pcy] <- "Y"
+
+  # Create a grid of points in the PCA-transformed space
+  x_min <- min(pca_transformed$X) - 1
+  x_max <- max(pca_transformed$X) + 1
+  y_min <- min(pca_transformed$Y) - 1
+  y_max <- max(pca_transformed$Y) + 1
+
+  # Generate grid points
+  grid <- expand.grid(X = seq(x_min, x_max, length.out = 100),
+                      Y = seq(y_min, y_max, length.out = 100))
+
+  # Combine the grid with zeros for other components
+  grid_full <- data.frame(matrix(0, nrow = nrow(grid), ncol = ncol(pca_transformed)-1))
+  colnames(grid_full) <- colnames(pca_transformed)[-ncol(pca_transformed)]
+  grid_full[, c(pcx, pcy)] <- grid
+
+  # Inverse transform the grid to the original feature space
+  inverse_pca <- function(pca_model, pca_data) {
+    center <- pca_model$mean
+    scale <- pca_model$std
+    rotation <- pca_model$rotation
+    
+    # Calculate the original data matrix
+    original_matrix <- as.matrix(pca_data) %*% t(rotation)
+    
+    # Re-scale and re-center
+    original_matrix <- sweep(original_matrix, 2, scale, `*`)
+    original_matrix <- sweep(original_matrix, 2, center, `+`)
+    
+    return(as.data.frame(original_matrix))
+  }
+
+  # Perform inverse PCA transformation on the grid
+  grid_original <- inverse_pca(preproc, grid_full)
+  colnames(grid_original) <- colnames(dat[-c(1,2)])
+
+  # Predict on the original feature space
+  grid_original$Group <- predict(mod, grid_original, type = "raw")
+
+  # Plot the decision boundary
+  ggplot() +
+    geom_point(data = pca_transformed, aes(x = X, y = Y, color = Group), size = 2) +
+    geom_tile(data = grid, aes(x = X, y = Y, fill = grid_original$Group), alpha = 0.3) +
+    labs(title = paste(alg, "Decision Boundary with PCA"),
+         x = paste("Principal Component", pcx),
+         y = paste("Principal Component", pcy)) +
+    theme_minimal() +
+    scale_color_manual(name = "Reference", labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+    scale_fill_manual(name = "Prediction", labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
+}
+
+
+```
+
+
+Multinomial logistic regression with neural networks {.tabset}
+=====================================================================
+
+
+
+```{r, message=FALSE}
+
+set.seed(2024)
+
+search_grid <- expand.grid(
+  decay = seq(0, 0.2, by = 0.01)
+)
+
+multi_model <- train_model(trn, "multinom", search_grid)
+
+pred_multi_model <- data.frame(Prediction = predict(multi_model, newx = as.matrix(trn[-c(1,2)]), type="raw"))
+
+trn_class_res <- data.frame(ID = trn$ID, Prediction = pred_multi_model, Reference = trn$Group)
+
+cfm <- confusionMatrix(predict(multi_model), trn$Group, positive = "DNML1")
+
+
+
+```
+
+Column 
 ---------------------------------------------------------------------
 
+```{r}
+make_bound_plot(multi_model, trn, 1, 2, "Neural Network")
+```
 
-### Chart C
 
 ```{r}
+make_bound_plot(multi_model, trn, 1, 3, "Neural Network") 
+```
+
+Column {data-width="350"}
+---------------------------------------------------------------------
+
+```{r}
+make_bound_plot(multi_model, trn, 2, 3, "Neural Network")
+```
+
+### Accuracy
+
+```{r}
+knitr::kable(cfm$table)
+```
+
+### Variable Importance
+
+```{r}
+knitr::kable(varImp(multi_model)[1])
+```
+
+
+
+# Random Forest
+
+```{r}
+set.seed(2024)
+
+
+search_grid <- expand.grid(
+  mtry = seq(1, 4, by = 1)
+)
+
+rf_model <- train_model(trn, "rf", search_grid)
+
+cfm_2 <- confusionMatrix(predict(rf_model), trn$Group, positive = "DNML1")
+
 
 ```
 
-### Chart D
+Column 
+---------------------------------------------------------------------
 
 ```{r}
+make_bound_plot(rf_model,trn, 1, 2, "Random Forest")
+```
+
+```{r}
+make_bound_plot(rf_model,trn, 1, 3, "Random Forest")
+```
+
+Column 
+---------------------------------------------------------------------
+
+```{r}
+make_bound_plot(rf_model,trn, 2, 3, "Random Forest")
+```
+
+
+## Accuracy
+
+```{r}
+knitr::kable(cfm_2$table)
+```
+
+## Variable Importance
+
+```{r}
+knitr::kable(varImp(multi_model)[1])
+```
+
+
+
+# SVM
+
+```{r}
+set.seed(2024)
+
+
+
+# Preprocess with PCA and train SVM model
+svm_model <- train_model(trn, "svmLinear")
+
+
+
+pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
+
+confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
+
+make_bound_plot(svm_model, trn, 1,2, "SVM")
+make_bound_plot(svm_model, trn, 1,3, "SVM")
+make_bound_plot(svm_model, trn, 2,3, "SVM")
 
 ```
+
+
+# Final model
+
+
+
+
+```{r}
+set.seed(2024)
+
+model_list <- list(Neural = multi_model, SVM = svm_model, RF = rf_model)
+
+res <- resamples(model_list)
+
+summary(res)
+
+
+pred_tst <- predict(multi_model, tst[-c(1,2)], type = "raw")
+
+confusionMatrix(pred_tst, tst$Group, positive = "DNM1L")
+
+make_bound_plot(multi_model, tst,1,2, "Neural Network")
+make_bound_plot(multi_model, tst, 1,3, "Neural Network")
+make_bound_plot(multi_model, tst ,2,3, "Neural Network")
+
+```
+
+
+
+
+

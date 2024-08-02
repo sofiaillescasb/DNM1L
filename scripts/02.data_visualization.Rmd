@@ -49,22 +49,23 @@ long_db <- db %>%
 
 ```
 
-# First Look {.tabset}
+First Look {.tabset}
 ===========================================================
 
-## sidebar {.sidebar}
+ sidebar {.sidebar}
 ------------------------------------------------------------
 
 ```{r}
 
-selectInput("geomtype", "Select Plot Type", choices = c("Box plot", "Density plot"))
+selectInput("geomtype", "Select Plot Type", choices = c("Box plot", "Density plot"), selected = "Box plot")
 
 ```
 
-## Column
+
+Column
 ------------------------------------------------------------
 
-### Boxplot
+### Distribution of each predictor
 
 ```{r}
 
@@ -97,14 +98,16 @@ renderPlotly({
 
 ```
 
- Variables are intercorrelated {.tabset}
+Variables are intercorrelated {.tabset}
 =====================================================================
 
 sidebar {.sidebar}
 ------------------------------------------------------------
 
 ```{r}
-selectInput("plot", "Select Plot Type", choices = c("Correlation Matrix", "Hierarchical clustering"))
+
+selectInput("corrplot", "Select Plot Type", choices = c("Correlation Matrix", "Hierarchical clustering"), selected = "Correlation Matrix")
+
 ```
 
 Column {data-width="650"}
@@ -126,30 +129,28 @@ red_vars <- redun(as.matrix(db[-c(1,2)]))
 db_res <- db %>%
   select(c("ID", "Group", red_vars$In))
 
-
 ```
 
 
 ```{r}
-#Variable Correlation HC
-uiOutput("plot_ui")
+## Rendering plots based on selected input
+uiOutput("corr_plot")
 
-output$plot_ui <- renderUI({
-  if (input$plot == "Correlation Matrix") {
-    plotlyOutput("plotly_plot")
+output$corr_plot <- renderUI({
+  if (input$corrplot == "Correlation Matrix") {
+    plotlyOutput("plotly_corrplot")
   } else {
-    plotOutput("ggplot_plot")
+    plotOutput("ggplot_corrplot")
   }
 })
 
-output$plotly_plot <- renderPlotly({
+output$plotly_corrplot <- renderPlotly({
   ggplotly(var_cor)
 })
 
-output$ggplot_plot <- renderPlot({
+output$ggplot_corrplot <- renderPlot({
   plot(vclus)
 })
-
 
 ```
 
@@ -270,16 +271,13 @@ search_grid <- expand.grid(
   decay = seq(0, 0.2, by = 0.01)
 )
 
-
 multi_model <- train_model(trn, "multinom", search_grid)
-
 
 pred_multi_model <- data.frame(Prediction = predict(multi_model, newx = as.matrix(trn[-c(1,2)]), type="raw"))
 
 trn_class_res <- data.frame(ID = trn$ID, Prediction = pred_multi_model, Reference = trn$Group)
 
 cfm <- confusionMatrix(predict(multi_model), trn$Group, positive = "DNML1")
-
 
 ```
 
@@ -290,8 +288,8 @@ Sidebar {.sidebar}
 
 ```{r}
 
-selectInput("xpc", "Select principal component for x-axis:", choices = c(1, 2, 3), selected = 1)
-selectInput("ypc", "Select principal component for y-axis:", choices = c(1, 2, 3), selected = 2)
+selectInput("xpc_1", "Select principal component for x-axis:", choices = c(1, 2, 3), selected = 1)
+selectInput("ypc_1", "Select principal component for y-axis:", choices = c(1, 2, 3), selected = 2)
 
 ```
 
@@ -299,31 +297,38 @@ selectInput("ypc", "Select principal component for y-axis:", choices = c(1, 2, 3
 Column {data-width="650"}
 ------------------------------------------------------------
 
+### Decision Boundary 
+
 ```{r}
 
-uiOutput("plot_ui")
+uiOutput("plot_1")
 
-output$plot_ui <- renderUI({
-  plotlyOutput("plotly_plot")
+output$plot_1 <- renderUI({
+  plotlyOutput("plotly_plot_1")
 })
 
-output$plotly_plot <- renderPlotly({
-  make_bound_plot(multi_model, trn, as.integer(input$xpc), as.integer(input$ypc), "Neural Network")
+output$plotly_plot_1 <- renderPlotly({
+  make_bound_plot(multi_model, trn, as.integer(input$xpc_1), as.integer(input$ypc_1), "Neural Network")
 })
 
 
 ```
 
 
-Tables {data-width="350"}
-------------------------------------------------------------
-
-### Tables
+### Accuracy
 
 ```{r}
 knitr::kable(cfm$table)
+
+```
+
+
+### Variable Importance
+
+```{r}
 knitr::kable(varImp(multi_model)[1])
 ```
+
 
 Random Forest {.tabset}
 ====================================================================
@@ -337,7 +342,7 @@ search_grid <- expand.grid(
 
 rf_model <- train_model(trn, "rf", search_grid)
 
-cfm <- confusionMatrix(predict(rf_model), trn$Group, positive = "DNML1")
+cfm_2 <- confusionMatrix(predict(rf_model), trn$Group, positive = "DNML1")
 
 
 ```
@@ -346,34 +351,42 @@ Sidebar {.sidebar}
 ------------------------------------------------------------
 
 ```{r}
-selectInput("xpc", "Select principal component for x-axis:", choices = c(1, 2, 3), selected = 1)
-selectInput("ypc", "Select principal component for y-axis:", choices = c(1, 2, 3), selected = 2)
+selectInput("xpc_2", "Select principal component for x-axis:", choices = c(1, 2, 3), selected = 1)
+selectInput("ypc_2", "Select principal component for y-axis:", choices = c(1, 2, 3), selected = 2)
 ```
 
 
 Column {data-width="650"}
 ------------------------------------------------------------
  
+### Decision Boundary 
+ 
 ```{r}
-uiOutput("plot_ui")
+uiOutput("plot_2")
 
-output$plot_ui <- renderUI({
-  plotlyOutput("plotly_plot")
+output$plot_2 <- renderUI({
+  plotlyOutput("plotly_plot_2")
 })
 
-output$plotly_plot <- renderPlotly({
-  make_bound_plot(rf_model, trn, as.integer(input$xpc), as.integer(input$ypc), "Neural Network")
+output$plotly_plot_2 <- renderPlotly({
+  make_bound_plot(rf_model, trn, as.integer(input$xpc_2), as.integer(input$ypc_2), "Random Forest")
 })
 ```
  
-Tables {data-width="350"}
-------------------------------------------------------------
+### Accuracy
  
 ```{r}
-knitr::kable(cfm$table)
+
+knitr::kable(cfm_2$table)
+
+```
+
+### Variable Importance
+
+```{r}
 knitr::kable(varImp(rf_model)[1])
 ```
- 
+
 
 # SVM
 
@@ -389,9 +402,7 @@ svm_model <- train_model(trn, "svmLinear")
 
 pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
 
-confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
+# confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
 
-make_bound_plot(svm_model, trn, 1,2, "SVM")
-make_bound_plot(svm_model, trn, 1,3, "SVM")
-make_bound_plot(svm_model, trn, 2,3, "SVM")
+
 ```
