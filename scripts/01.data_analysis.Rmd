@@ -12,6 +12,7 @@ library(ggfortify)
 library(GGally)
 library(glmnet)
 library(Hmisc)
+library(writexl)
 library(tidyverse)
 ```
 
@@ -313,16 +314,26 @@ model_list <- list(Neural = multi_model, SVM = svm_model, RF = rf_model)
 
 res <- resamples(model_list)
 
-summary(res)
+sumres <- summary(res)
+
+as.table(sumres$statistics$Accuracy)
+as.table(sumres$statistics$Kappa)
 
 
 pred_tst <- predict(multi_model, tst[-c(1,2)], type = "raw")
+final_cnfmat <- confusionMatrix(pred_tst, tst$Group, positive = "DNM1L")
 
-confusionMatrix(pred_tst, tst$Group, positive = "DNM1L")
+tblmat <- as.table(final_cnfmat$table)
+tblbyclass <- data.frame(final_cnfmat$byClass)
+
+
+
+
 
 make_bound_plot(multi_model, tst,1,2, "Neural Network")
 make_bound_plot(multi_model, tst, 1,3, "Neural Network")
 make_bound_plot(multi_model, tst ,2,3, "Neural Network")
+
 
 ```
 
