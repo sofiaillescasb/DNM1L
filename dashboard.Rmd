@@ -21,6 +21,7 @@ output: html_notebook
 
 
 ```{r include=FALSE}
+library(flexdashboard)
 library(here)
 library(caret)
 library(readxl)
@@ -28,6 +29,9 @@ library(ggfortify)
 library(GGally)
 library(glmnet)
 library(Hmisc)
+library(plotly)
+library(knitr)
+library(gbm)
 library(tidyverse)
 ```
 
@@ -41,16 +45,17 @@ db$Group <- as.factor(db$Group)
 
 #Removing redundant variables:
 
-colnames(db)
 
 db <- db %>%
   select(-c("MitoCount", "TotArea", "Bcount", "TotPerim", "TotBLength", "Bjunct", "BEndP"))
 
 ```
 
+First Look {.tabset}
+===========================================================
 
-
-# Visualization
+Column
+-----------------------------------------------------------
 
 ```{r, message=FALSE, warning=FALSE}
 long_db <- db %>%
@@ -73,24 +78,56 @@ long_db %>%
 
 ```
 
-
-# PCA
+Variables are intercorrelated {.tabset}
+=====================================================================
 
 ```{r}
+
+var_cor <- db %>%
+  select(-c(ID, Group)) %>%
+  ggcorr(label = TRUE, low = "#5499C7", high = "#BE0461", size =3) 
+
+
+vclus <- varclus(as.matrix(db[-c(1,2)]))
+
+# groups <- cutree(vclus$hclust, 3)
 
 red_vars <- redun(as.matrix(db[-c(1,2)]))
 
 db_res <- db %>%
   select(c("ID", "Group", red_vars$In))
 
+```
+
+
+```{r}
+ggplotly(var_cor)
+```
+
+Column
+-------------------------------------------------------
+
+```{r}
+plot(vclus)
+```
+
+
+```{r, message=FALSE}
 db_res %>%
   select(-c(ID, Group)) %>%
   ggpairs() 
-
-  
-
 ```
 
+
+Variables are intercorrelated {.tabset}
+=====================================================================
+
+Column
+---------------------------------------------------------------------
+
+```{r}
+
+```
 
 
 
@@ -127,8 +164,7 @@ train_model <- function(dat, method, search_grid=NULL) {
                data = dat[-1], 
                method = method,
                tuneGrid = search_grid,
-               trControl = train_control,
-               trace = FALSE)
+               trControl = train_control)
   
   return(mdl)
 }
@@ -201,8 +237,7 @@ Multinomial logistic regression with neural networks {.tabset}
 =====================================================================
 
 
-
-```{r, message=FALSE}
+```{r, include=FALSE}
 
 set.seed(2024)
 
@@ -250,7 +285,11 @@ knitr::kable(cfm$table)
 ### Variable Importance
 
 ```{r}
-knitr::kable(varImp(multi_model)[1])
+var_imp <- as.data.frame(varImp(multi_model)[1]) %>%
+  rename(Importance = Overall) %>%
+  arrange(desc(Importance))
+
+knitr::kable(var_imp)
 ```
 
 
@@ -300,60 +339,139 @@ knitr::kable(cfm_2$table)
 ## Variable Importance
 
 ```{r}
-knitr::kable(varImp(multi_model)[1])
-```
 
+var_imp_rf <- as.data.frame(varImp(rf_model)[1]) %>%
+  rename(Importance = Overall) %>%
+  arrange(desc(Importance))
 
-
-# SVM
-
-```{r}
-set.seed(2024)
-
-
-
-# Preprocess with PCA and train SVM model
-svm_model <- train_model(trn, "svmLinear")
-
-
-
-pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
-
-confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
-
-make_bound_plot(svm_model, trn, 1,2, "SVM")
-make_bound_plot(svm_model, trn, 1,3, "SVM")
-make_bound_plot(svm_model, trn, 2,3, "SVM")
+knitr::kable(var_imp_rf)
 
 ```
 
 
-# Final model
 
+# Gradien Boosting Machine
+
+```{r include=FALSE}
+set.seed(2024)
+
+search_grid <- expand.grid(interaction.depth = c(1, 3, 5),
+                        n.trees = c(50, 100, 150),
+                        shrinkage = c(0.01, 0.1),
+                        n.minobsinnode = 10)
+
+# Preprocess with PCA and train GBM model
+gbm_model <- train_model(trn, "gbm", search_grid)
+
+
+
+pred_svm <- predict(gbm_model, as.matrix(trn[-c(1,2)]), type = "raw")
+
+cfm_3 <- confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
+
+
+```
+
+
+Column 
+---------------------------------------------------------------------
+
+```{r}
+make_bound_plot(gbm_model, trn, 1,2, "GBM")
+```
+
+
+```{r}
+make_bound_plot(gbm_model, trn, 1,3, "GBM")
+
+```
+
+
+Column 
+---------------------------------------------------------------------
+
+```{r}
+make_bound_plot(gbm_model, trn, 2,3, "GBM")
+```
+
+
+Column 
+---------------------------------------------------------------------
+
+## Accuracy
+
+```{r}
+knitr::kable(cfm_3$table)
+```
 
 
 
 ```{r}
+var_imp_rf <- as.data.frame(varImp(gbm_model)[1]) %>%
+  rename(Importance = Overall) %>%
+  arrange(desc(Importance))
+
+knitr::kable(var_imp_rf)
+```
+
+
+Final model {.tabset}
+==============================================================================
+
+```{r}
 set.seed(2024)
 
-model_list <- list(Neural = multi_model, SVM = svm_model, RF = rf_model)
+model_list <- list(Neural = multi_model, GBM = gbm_model, RF = rf_model)
 
 res <- resamples(model_list)
 
-summary(res)
+sum_res <- summary(res)
 
 
 pred_tst <- predict(multi_model, tst[-c(1,2)], type = "raw")
 
-confusionMatrix(pred_tst, tst$Group, positive = "DNM1L")
+cfm_tst <- confusionMatrix(pred_tst, tst$Group, positive = "DNM1L")
 
-make_bound_plot(multi_model, tst,1,2, "Neural Network")
-make_bound_plot(multi_model, tst, 1,3, "Neural Network")
-make_bound_plot(multi_model, tst ,2,3, "Neural Network")
 
 ```
 
 
+```{r}
+knitr::kable(sum_res$statistics$Accuracy, caption = "Accuracy Across Models")
+
+knitr::kable(sum_res$statistics$Kappa, caption = "Kappa Across Models")
+```
 
 
+```{r}
+knitr::kable(cfm_tst$table)
+```
+
+
+```{r}
+p1 <- make_bound_plot(multi_model, tst,1,2, "Neural Network")
+
+ggsave(here("tst_1.jpeg"), p1, width = 6, height = 4, units = "in")
+```
+
+
+```{r}
+p2 <- make_bound_plot(multi_model, tst, 1,3, "Neural Network")
+ggsave(here("tst_2.jpeg"), p2, width = 6, height = 4, units = "in")
+```
+
+Column
+---------------------------------------------------------------------------
+
+```{r}
+p3 <- make_bound_plot(multi_model, tst ,2,3, "Neural Network")
+ggsave(here("tst_3.jpeg"), p3, width = 6, height = 4, units = "in")
+```
+
+
+```{r}
+knitr::kable(cfm_3$table)
+knitr::kable(cfm_3$overall, caption = )
+
+```
 
