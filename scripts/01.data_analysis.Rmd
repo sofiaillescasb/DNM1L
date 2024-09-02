@@ -23,6 +23,7 @@ db <- na.omit(db)
 
 db$ID <- as.factor(db$ID) 
 db$Group <- as.factor(db$Group) 
+# db$Group <- relevel(db$Group, ref = "DNM1L")
 
 #Removing redundant variables:
 
@@ -45,21 +46,21 @@ long_db %>%
   ggplot(aes(x = Group, y = Value, fill = Group)) +
   geom_boxplot() +
   facet_wrap(~ Predictor, scales = "free_y") +
-  scale_fill_manual(values = c("#6996e3", "#dd5129", "#2b9b81")) +
+  scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
   theme_classic()
 
 long_db %>%
   ggplot(aes(x = Value, fill = Group)) +
   geom_density(alpha = 0.6) +
   facet_wrap(~ Predictor, scales = "free") +
-  scale_fill_manual(values = c("#6996e3", "#dd5129", "#2b9b81")) +
+  scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
   theme_classic()
 
 long_db %>%
   ggplot(aes(x = Value, fill = Group)) +
   geom_histogram(alpha = 0.6) +
   facet_wrap(~ Predictor, scales = "free") +
-  scale_fill_manual(values = c("#6996e3", "#dd5129", "#2b9b81")) +
+  scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
   theme_classic()
 
 # for (p in colnames(db[-c(1,2)])) {
@@ -146,7 +147,7 @@ train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
 
 train_model <- function(dat, method, search_grid=NULL) {
   set.seed(2024)
-  
+  dat$Group <- relevel(dat$Group, ref = "DNM1L")
   mdl <- train(Group ~ .,
                data = dat[-1], 
                method = method,
@@ -204,12 +205,13 @@ make_bound_plot <- function(mod, dat, pcx = 1, pcy = 2, alg) {
 
   # Predict on the original feature space
   grid_original$Group <- predict(mod, grid_original, type = "raw")
+  grid_original$Group <- relevel(grid_original$Group, ref = "Control")
 
   # Plot the decision boundary
   ggplot() +
     geom_point(data = pca_transformed, aes(x = X, y = Y, color = Group), size = 2) +
     geom_tile(data = grid, aes(x = X, y = Y, fill = grid_original$Group), alpha = 0.3) +
-    labs(title = paste(alg, "Decision Boundary with PCA"),
+    labs(title = paste(alg, "Decision Boundary on PCA-projected Data"),
          x = paste("Principal Component", pcx),
          y = paste("Principal Component", pcy)) +
     theme_minimal() +
@@ -284,10 +286,10 @@ make_bound_plot(rf_model,trn, 2, 3, "Random Forest")
 ```{r}
 set.seed(2024)
 
-
+search_grid <- expand.grid(C = seq(0.01, 2, length = 20))
 
 # Preprocess with PCA and train SVM model
-svm_model <- train_model(trn, "svmLinear")
+svm_model <- train_model(trn, "svmLinear", search_grid = search_grid)
 
 
 
@@ -316,23 +318,31 @@ res <- resamples(model_list)
 
 sumres <- summary(res)
 
+
 as.table(sumres$statistics$Accuracy)
 as.table(sumres$statistics$Kappa)
 
+# write_xlsx()
 
-pred_tst <- predict(multi_model, tst[-c(1,2)], type = "raw")
+tst$Group <- relevel(tst$Group, ref = "DNM1L")
+
+pred_tst <- predict(svm_model, tst[-c(1,2)], type = "raw")
 final_cnfmat <- confusionMatrix(pred_tst, tst$Group, positive = "DNM1L")
 
 tblmat <- as.table(final_cnfmat$table)
 tblbyclass <- data.frame(final_cnfmat$byClass)
 
+write_xlsx(tblbyclass, here("tables/per_class.xlsx"))
 
+tst$Group <- relevel(tst$Group, ref = "Control")
 
+final_cnfmat
+make_bound_plot(svm_model, tst,1,2, "SVM")
 
+ggsave(here("plots/des_boun.jpeg"))
 
-make_bound_plot(multi_model, tst,1,2, "Neural Network")
-make_bound_plot(multi_model, tst, 1,3, "Neural Network")
-make_bound_plot(multi_model, tst ,2,3, "Neural Network")
+make_bound_plot(svm_model, tst, 1,3, "SVM")
+make_bound_plot(svm_model, tst ,2,3, "SVM")
 
 
 ```
