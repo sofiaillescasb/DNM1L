@@ -63,35 +63,21 @@ long_db %>%
   scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
   theme_classic()
 
-# for (p in colnames(db[-c(1,2)])) {
-#   df <- db[c("ID","Group",p)]
-#   colnames(df) <- c("ID", "Group", "Predictor")
-#   pl <- df %>%
-#     ggplot(aes(sample = Predictor, color = Group)) +
-#     geom_qq() +
-#     geom_qq_line() +
-#     scale_color_manual(values = c("#6996e3", "#dd5129")) +
-#     theme_classic() +
-#     ggtitle(p)
-#   plot(pl)
-# }
 
-db %>%
-  # filter(Group == "Control") %>%
-  select(-c(ID, Group)) %>%
-  # select(-c(ID, Group, MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio)) %>%
-  ggpairs() 
-
-# db %>%
-#   # filter(Group == "Control") %>%
-#   select(c(MeanArea, MeanPerim, BMitoRatio, TotBLengthMitoRatio, MeanBLength, BJunctMitoRatio, BEndPMitoRatio)) %>%
-#   ggpairs() 
+ 
 ```
 
 
 # PCA
 
 ```{r}
+
+# 
+# db_res %>%
+#   select(-c(ID, Group)) %>%
+#   ggpairs() # Así se ve la correlación entre variables. Es importante no tomar en cuenta 
+
+# Hay otras formas de hacer esto. Yo solo use esta función y quité las variables que eran redundantes, pero es que mis datos tenían variables que eran super dependientes unas de otras. El señorcito explica muchas cosas aquí que no he terminado de entender https://hbiostat.org/rmsc. En este es específico de bioestadñistica https://hbiostat.org/bbr. Estoy tratando de leer sus cosas. Si querés mejor no uses lo de redun().
 
 red_vars <- redun(as.matrix(db[-c(1,2)]))
 
@@ -130,11 +116,12 @@ trnIndex <- createDataPartition(db_ml$Group, p = 0.7, list = FALSE)
 trn <- db_ml[trnIndex,]
 tst <- db_ml[-trnIndex,]
 
-trn[-c(1,2)] <- scale(log2(trn[-c(1,2)]))
-tst[-c(1,2)] <- scale(log2(tst[-c(1,2)]))
+# trn[-c(1,2)] <- scale(log2(trn[-c(1,2)]))
+# tst[-c(1,2)] <- scale(log2(tst[-c(1,2)]))
 
 
 ```
+
 
 # Defining model training functions 
 
@@ -157,6 +144,8 @@ train_model <- function(dat, method, search_grid=NULL) {
   
   return(mdl)
 }
+
+# Holi! Esto lo hice para plotear las predicciones de los modelos. No creo que sea necesario. Tenía que transformar a principal components porque necesitaba 2 dimensiones. chat me ayudó.
 
 make_bound_plot <- function(mod, dat, pcx = 1, pcy = 2, alg) {
   set.seed(2024)  # Ensure reproducibility in PCA transformation
