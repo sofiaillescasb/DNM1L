@@ -3,7 +3,6 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-
 ```{r include=FALSE}
 library(here)
 library(caret)
@@ -16,134 +15,258 @@ library(writexl)
 library(tidyverse)
 ```
 
+```{r read_data, message=FALSE, warning=FALSE}
+db <- read_csv(here("data/DNM1L_MitochondriaAnalyzer_datos average.csv"))
+db <- db[,1:19]
 
-```{r read_data}
-db <- read_excel(here("data/dataform.xlsx"))
-db <- na.omit(db)
+id <- data.frame(
+  Control = "Control",
+  DNM1L = "DNM1L",
+  OTHERMIT = "OTHERMIT",
+  n1 = 7,
+  n2 = 10,
+  n3 = 7
+)
 
-db$ID <- as.factor(db$ID) 
-db$Group <- as.factor(db$Group) 
-# db$Group <- relevel(db$Group, ref = "DNM1L")
+# Expand each count into numbered names
+id <- paste0(db$Class, unlist(
+  lapply(id[4:6], function(n) {
+    paste0(id$gene, "_", seq_len(n))
+  })
+))
+
+db$Class <- as.factor(db$Class) 
+
+db$ID <- as.factor(id) 
+
+# db$Class <- relevel(db$Class, ref = "DNM1L")
 
 #Removing redundant variables:
 
 colnames(db)
 
 db <- db %>%
-  select(-c("MitoCount", "TotArea", "Bcount", "TotPerim", "TotBLength", "Bjunct", "BEndP"))
+  select(-c("Count", "TotalArea", "Branches", "TotalPerimeter", "TotalBranchLength", "BranchJunctions", "BranchEndPoints")) 
 
 ```
-
-
 
 # Visualization
 
 ```{r, message=FALSE, warning=FALSE}
-long_db <- db %>%
-  pivot_longer(cols = -c(ID, Group), names_to = "Predictor", values_to = "Value")
 
-long_db %>%
-  ggplot(aes(x = Group, y = Value, fill = Group)) +
+
+long_db <- db %>%
+  pivot_longer(cols = -c(ID, Class), names_to = "Predictor", values_to = "Value")
+
+boxplt_all <- long_db %>%
+  ggplot(aes(x = Class, y = Value, fill = Class)) +
   geom_boxplot() +
   facet_wrap(~ Predictor, scales = "free_y") +
   scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
   theme_classic()
 
-long_db %>%
-  ggplot(aes(x = Value, fill = Group)) +
+ggsave("/home/sofia/Projects/DNM1L/plots/average/boxplt_all.png", boxplt_all, width = 12, height = 8, units = "in")
+
+densty_all <- long_db %>%
+  ggplot(aes(x = Value, fill = Class)) +
   geom_density(alpha = 0.6) +
   facet_wrap(~ Predictor, scales = "free") +
   scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
   theme_classic()
 
-long_db %>%
-  ggplot(aes(x = Value, fill = Group)) +
+ggsave("/home/sofia/Projects/DNM1L/plots/average/densty_all.png", densty_all, width = 12, height = 8, units = "in")
+
+hist_all <- long_db %>%
+  ggplot(aes(x = Value, fill = Class)) +
   geom_histogram(alpha = 0.6) +
   facet_wrap(~ Predictor, scales = "free") +
   scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
   theme_classic()
 
-
+ggsave("/home/sofia/Projects/DNM1L/plots/average/hist_all.png", hist_all, width = 12, height = 8, units = "in")
  
 ```
 
+# Data Split
 
 # PCA
 
 ```{r}
-
 # 
 # db_res %>%
-#   select(-c(ID, Group)) %>%
+#   select(-c(ID, Class)) %>%
 #   ggpairs() # Así se ve la correlación entre variables. Es importante no tomar en cuenta 
 
 # Hay otras formas de hacer esto. Yo solo use esta función y quité las variables que eran redundantes, pero es que mis datos tenían variables que eran super dependientes unas de otras. El señorcito explica muchas cosas aquí que no he terminado de entender https://hbiostat.org/rmsc. En este es específico de bioestadñistica https://hbiostat.org/bbr. Estoy tratando de leer sus cosas. Si querés mejor no uses lo de redun().
-
-red_vars <- redun(as.matrix(db[-c(1,2)]))
-
-db_res <- db %>%
-  select(c("ID", "Group", red_vars$In))
-
-db_res %>%
-  select(-c(ID, Group)) %>%
-  ggpairs() 
-
-pca_res <- prcomp(db_res[,-c(1,2)], scale. = TRUE)
+#  Creating repeated CV folds
+set.seed(123)
 
 
-autoplot(pca_res, data = db_res, color = "Group", size = 3, loadings = TRUE, loadings.label = TRUE) +
-  theme_classic() + 
-  scale_color_manual(values = c("#a39b9b",  "#7babdb", "#f2de79"))
-
-autoplot(pca_res, data = db_res, color = "Group", label = TRUE, shape = FALSE, label.label = "ID") +
-  theme_classic() + 
-  scale_color_manual(values = c("#a39b9b",  "#7babdb", "#f2de79"))
-  
-
-```
+X <- db %>% select(-ID, -Class)
+y <- db$Class
 
 
-# Data Split
 
-```{r}
-set.seed(2024)
+folds <- createMultiFolds(
+  y = y,
+  k = 3,
+  times = 10
+)
 
-db_ml <- db_res 
+fold_data <- vector("list", length(folds))
 
+for (i in seq_along(folds)) {
 
-trnIndex <- createDataPartition(db_ml$Group, p = 0.7, list = FALSE)
+  train_idx <- folds[[i]]
+  valid_idx <- setdiff(seq_len(nrow(db)), train_idx)
 
-trn <- db_ml[trnIndex,]
-tst <- db_ml[-trnIndex,]
-
-# trn[-c(1,2)] <- scale(log2(trn[-c(1,2)]))
-# tst[-c(1,2)] <- scale(log2(tst[-c(1,2)]))
-
-
-```
+  train_data <- db[train_idx, ]
+  valid_data <- db[valid_idx, ]
 
 
-# Defining model training functions 
+  # -------------------------
+  # redun ONLY on training
+  # -------------------------
+
+  red_vars <- redun(
+    as.matrix(
+      train_data %>%
+        select(-ID, -Class)
+    )
+  )
+
+  selected_vars <- red_vars$In
 
 
-```{r}
+  # -------------------------
+  # Selected variables
+  # -------------------------
 
-set.seed(2024)
+  train_X <- train_data %>%
+    select(ID, Class, all_of(selected_vars))
 
-train_control <- trainControl(method="repeatedcv", number=10, repeats=3)
+  valid_X <- valid_data %>%
+    select(ID, Class, all_of(selected_vars))
 
-train_model <- function(dat, method, search_grid=NULL) {
-  set.seed(2024)
-  dat$Group <- relevel(dat$Group, ref = "DNM1L")
-  mdl <- train(Group ~ .,
-               data = dat[-1], 
-               method = method,
-               tuneGrid = search_grid,
-               trControl = train_control,
-               trace = FALSE)
-  
-  return(mdl)
+
+  # -------------------------
+  # PCA ONLY on training
+  # -------------------------
+
+  pca_fit <- prcomp(
+    train_X %>% select(-ID, -Class),
+    scale. = TRUE
+  )
+
+
+  # -------------------------
+  # PCA scores
+  # -------------------------
+
+  train_pca <- predict(
+    pca_fit,
+    train_X %>% select(-ID, -Class)
+  )
+
+  valid_pca <- predict(
+    pca_fit,
+    valid_X %>% select(-ID, -Class)
+  )
+
+
+  # -------------------------
+  # Save everything
+  # -------------------------
+
+  fold_data[[i]] <- list(
+    train_idx = train_idx,
+    valid_idx = valid_idx,
+    train_X = train_X,
+    valid_X = valid_X,
+    red_vars = red_vars,
+    selected_vars = selected_vars,
+    pca_fit = pca_fit,
+    train_pca = train_pca,
+    valid_pca = valid_pca
+  )
 }
+library(patchwork)
+
+f1_pca <- autoplot(
+  fold_data[[1]]$pca_fit,
+  data = fold_data[[1]]$train_X,
+  colour = "Class",
+  size = 3,
+  loadings = TRUE,
+  loadings.label = TRUE
+) +
+  theme_classic() +
+  scale_colour_manual(
+    values = c("#a39b9b", "#7babdb", "#f2de79")
+  )
+
+f2_pca <- autoplot(
+  fold_data[[2]]$pca_fit,
+  data = fold_data[[2]]$train_X,
+  colour = "Class",
+  size = 3,
+  loadings = TRUE,
+  loadings.label = TRUE
+) +
+  theme_classic() +
+  scale_colour_manual(
+    values = c("#a39b9b", "#7babdb", "#f2de79")
+  )
+
+f3_pca <- autoplot(
+  fold_data[[3]]$pca_fit,
+  data = fold_data[[3]]$train_X,
+  colour = "Class",
+  size = 3,
+  loadings = TRUE,
+  loadings.label = TRUE
+) +
+  theme_classic() +
+  scale_colour_manual(
+    values = c("#a39b9b", "#7babdb", "#f2de79")
+  )
+
+f4_pca <- autoplot(
+  fold_data[[4]]$pca_fit,
+  data = fold_data[[4]]$train_X,
+  colour = "Class",
+  size = 3,
+  loadings = TRUE,
+  loadings.label = TRUE
+) +
+  theme_classic() +
+  scale_colour_manual(
+    values = c("#a39b9b", "#7babdb", "#f2de79")
+  )
+
+f5_pca <- autoplot(
+  fold_data[[5]]$pca_fit,
+  data = fold_data[[5]]$train_X,
+  colour = "Class",
+  size = 3,
+  loadings = TRUE,
+  loadings.label = TRUE
+) +
+  theme_classic() +
+  scale_colour_manual(
+    values = c("#a39b9b", "#7babdb", "#f2de79")
+  )
+
+pca_first_folds <- f1_pca + f2_pca + f3_pca + f4_pca + f5_pca
+```
+
+# Defining model training functions
+
+```{r}
+
+set.seed(2024)
+
+
 
 # Holi! Esto lo hice para plotear las predicciones de los modelos. No creo que sea necesario. Tenía que transformar a principal components porque necesitaba 2 dimensiones. chat me ayudó.
 
@@ -152,7 +275,7 @@ make_bound_plot <- function(mod, dat, pcx = 1, pcy = 2, alg) {
 
   preproc <- preProcess(dat[-c(1,2)], method = c("pca"))
   pca_transformed <- predict(preproc, dat[-c(1,2)])
-  pca_transformed <- data.frame(pca_transformed, Group = dat$Group)
+  pca_transformed <- data.frame(pca_transformed, Class = dat$Class)
 
   colnames(pca_transformed)[pcx] <- "X"
   colnames(pca_transformed)[pcy] <- "Y"
@@ -193,24 +316,23 @@ make_bound_plot <- function(mod, dat, pcx = 1, pcy = 2, alg) {
   colnames(grid_original) <- colnames(dat[-c(1,2)])
 
   # Predict on the original feature space
-  grid_original$Group <- predict(mod, grid_original, type = "raw")
-  grid_original$Group <- relevel(grid_original$Group, ref = "Control")
+  grid_original$Class <- predict(mod, grid_original, type = "raw")
+  grid_original$Class <- relevel(grid_original$Class, ref = "Control")
 
   # Plot the decision boundary
   ggplot() +
-    geom_point(data = pca_transformed, aes(x = X, y = Y, color = Group), size = 2) +
-    geom_tile(data = grid, aes(x = X, y = Y, fill = grid_original$Group), alpha = 0.3) +
+    geom_point(data = pca_transformed, aes(x = X, y = Y, color = Class), size = 2) +
+    geom_tile(data = grid, aes(x = X, y = Y, fill = grid_original$Class), alpha = 0.3) +
     labs(title = paste(alg, "Decision Boundary on PCA-projected Data"),
          x = paste("Principal Component", pcx),
          y = paste("Principal Component", pcy)) +
     theme_minimal() +
-    scale_color_manual(name = "Reference", labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
-    scale_fill_manual(name = "Prediction", labels = levels(pca_transformed$Group), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
+    scale_color_manual(name = "Reference", labels = levels(pca_transformed$Class), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
+    scale_fill_manual(name = "Prediction", labels = levels(pca_transformed$Class), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
 }
 
 
 ```
-
 
 # Multinomial logistic regression with neural networks
 
@@ -231,33 +353,182 @@ varImp(multi_model)
 
 pred_multi_model <- data.frame(Prediction = predict(multi_model, newx = as.matrix(trn[-c(1,2)]), type="raw"))
 
-trn_class_res <- data.frame(ID = trn$ID, Prediction = pred_multi_model, Reference = trn$Group)
+trn_class_res <- data.frame(ID = trn$ID, Prediction = pred_multi_model, Reference = trn$Class)
 
-confusionMatrix(predict(multi_model), trn$Group, positive = "DNML1")
+nn_cnfmat <- confusionMatrix(
+  predict(multi_model),
+  trn$Class,
+  positive = "DNML1"
+)
 
+
+tblmat <- as.table(nn_cnfmat$table)
+tblbyclass <- data.frame(nn_cnfmat$byClass)
+
+write_xlsx(tblbyclass, here("/home/sofia/Projects/DNM1L/plots/average/nn/train/tables/confusion_matrix.xlsx"))
 
 confint(multi_model$finalModel)
 
 
-make_bound_plot(multi_model, trn, 1, 2, "Neural Network")
-make_bound_plot(multi_model, trn, 1, 3, "Neural Network") #fix this, the boundaries make no sense, maybe just use pc 1 and 2 plot
-make_bound_plot(multi_model, trn, 2, 3, "Neural Network")
+
+nn_trn_12_bp <- make_bound_plot(multi_model, trn, 1, 2, "Neural Network")
+
+ggsave("/home/sofia/Projects/DNM1L/plots/average/nn/train/nn_trn_12_bp.png", nn_trn_12_bp, width = 8, height = 6, units = "in")
+
+nn_trn_13_bp <- make_bound_plot(multi_model, trn, 1, 3, "Neural Network") #fix this, the boundaries make no sense, maybe just use pc 1 and 2 plot
+
+ggsave("/home/sofia/Projects/DNM1L/plots/average/nn/train/nn_trn_13_bp.png", nn_trn_13_bp, width = 8, height = 6, units = "in")
+
+nn_trn_2_3_bp <-make_bound_plot(multi_model, trn, 2, 3, "Neural Network")
+
+ggsave("/home/sofia/Projects/DNM1L/plots/average/nn/train/nn_trn_2_3_bp.png", nn_trn_2_3_bp, width = 8, height = 6, units = "in")
 
 ```
 
-
 # Random Forest
+
+```{r }
+set.seed(2024)
+
+ctrl_none <- trainControl(
+  method = "none"
+)
+
+rf_models <- vector("list", length(fold_data))
+
+for (i in seq_along(fold_data)) {
+
+  dat <- fold_data[[i]]
+
+  rf_models[[i]] <- train(
+    x = dat$train_X %>% select(-ID, -Class),
+    y = dat$train_X$Class,
+    method = "rf",
+    trControl = ctrl_none
+  )
+}
+
+rf_results <- vector("list", length(fold_data))
+
+for (i in seq_along(fold_data)) {
+
+  dat <- fold_data[[i]]
+  model <- rf_models[[i]]
+
+  pred <- predict(
+    model,
+    newdata = dat$valid_X %>% select(-ID, -Class)
+  )
+
+  prob <- predict(
+    model,
+    newdata = dat$valid_X %>% select(-ID, -Class),
+    type = "prob"
+  )
+
+  rf_results[[i]] <- data.frame(
+  ID = dat$valid_X$ID,
+  obs = dat$valid_X$Class,
+  pred = pred,
+  prob
+)
+}
+
+rf_metrics <- lapply(seq_along(rf_results), function(i) {
+
+  metric_data <- rf_results[[i]] %>%
+    select(ID, obs, pred, all_of(levels(db$Class))) %>%
+    as.data.frame()
+
+  multiClassSummary(
+    data = metric_data,
+    lev = levels(db$Class),
+    model = rf_models[[i]]
+  )
+})
+
+rf_metrics <- bind_rows(
+  rf_metrics,
+  .id = "fold"
+)
+
+conf_matrices <- lapply(rf_results, function(x) {
+  confusionMatrix(
+    data = x$pred,
+    reference = x$obs
+  )
+})
+
+names(conf_matrices) <- paste0("Fold_", seq_along(conf_matrices))
+
+conf_matrices
+
+all_rf_results <- bind_rows(rf_results)
+
+
+feature_selection <- lapply(
+  fold_data,
+  function(x) x$selected_vars
+)
+
+feature_counts <- table(
+  unlist(feature_selection)
+)
+
+feature_counts <- data.frame(
+  feature = names(feature_counts),
+  n_selected = as.integer(feature_counts)
+) %>%
+  arrange(desc(n_selected))
+
+feature_final <- feature_counts %>%
+  mutate(
+    selection_frequency = n_selected / length(fold_data)
+  ) %>%
+  arrange(desc(selection_frequency)) %>%
+  filter(selection_frequency >= 0.50) %>%
+  pull(feature)
+
+final_data <- db %>%
+  select(ID, Class, all_of(feature_final))
+
+final_rf <- train(
+  x = final_data %>% select(-c(ID, Class)),
+  y = final_data$Class,
+  method = "rf",
+  trControl = trainControl(method = "none")
+)
+
+all_rf_results <- bind_rows(rf_results)
+
+class_levels <- levels(db$Class)
+
+#################################confusion matrix##############################
+sample_pred <- all_rf_results %>%
+  group_by(obs) %>%
+  summarise(
+    across(
+      all_of(class_levels),
+      mean
+    ),
+    .groups = "drop"
+  )
+###############################################################################
+
+
+
+```
 
 ```{r}
 set.seed(2024)
 
 search_grid <- expand.grid(
-  mtry = seq(1, 4, by = 1)
+  mtry = seq(1, 3, by = 1)
 )
 
 rf_model <- train_model(trn, "rf", search_grid)
 
-confusionMatrix(predict(rf_model), trn$Group, positive = "DNML1")
+confusionMatrix(predict(rf_model), trn$Class, positive = "DNML1")
 plot(rf_model)
 
 
@@ -268,7 +539,6 @@ make_bound_plot(rf_model,trn, 1, 2, "Random Forest")
 make_bound_plot(rf_model,trn, 1, 3, "Random Forest")
 make_bound_plot(rf_model,trn, 2, 3, "Random Forest")
 ```
-
 
 # SVM
 
@@ -281,11 +551,11 @@ search_grid <- expand.grid(C = seq(0.01, 2, length = 20))
 svm_model <- train_model(trn, "svmLinear", search_grid = search_grid)
 
 plot(svm_model)
-plot()
+
 
 pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
 
-confusionMatrix(pred_svm, trn$Group, positive = "DNM1L")
+confusionMatrix(pred_svm, trn$Class, positive = "DNM1L")
 
 make_bound_plot(svm_model, trn, 1,2, "SVM")
 make_bound_plot(svm_model, trn, 1,3, "SVM")
@@ -293,11 +563,7 @@ make_bound_plot(svm_model, trn, 2,3, "SVM")
 
 ```
 
-
 # Final model
-
-
-
 
 ```{r}
 set.seed(2024)
@@ -308,23 +574,27 @@ res <- resamples(model_list)
 
 sumres <- summary(res)
 
+res
+sumres
+
+
 
 as.table(sumres$statistics$Accuracy)
 as.table(sumres$statistics$Kappa)
 
 # write_xlsx()
 
-tst$Group <- relevel(tst$Group, ref = "DNM1L")
+tst$Class <- relevel(tst$Class, ref = "DNM1L")
 
 pred_tst <- predict(svm_model, tst[-c(1,2)], type = "raw")
-final_cnfmat <- confusionMatrix(pred_tst, tst$Group, positive = "DNM1L")
+final_cnfmat <- confusionMatrix(pred_tst, tst$Class, positive = "DNM1L")
 
 tblmat <- as.table(final_cnfmat$table)
 tblbyclass <- data.frame(final_cnfmat$byClass)
 
 write_xlsx(tblbyclass, here("tables/per_class.xlsx"))
 
-tst$Group <- relevel(tst$Group, ref = "Control")
+tst$Class <- relevel(tst$Class, ref = "Control")
 
 final_cnfmat
 make_bound_plot(svm_model, tst,1,2, "SVM")
@@ -336,8 +606,3 @@ make_bound_plot(svm_model, tst ,2,3, "SVM")
 
 
 ```
-
-
-
-
-
