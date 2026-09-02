@@ -452,16 +452,16 @@ rf_metrics <- bind_rows(
   .id = "fold"
 )
 
-conf_matrices <- lapply(rf_results, function(x) {
+conf_matrices_rf <- lapply(rf_results, function(x) {
   confusionMatrix(
     data = x$pred,
     reference = x$obs
   )
 })
 
-names(conf_matrices) <- paste0("Fold_", seq_along(conf_matrices))
+names(conf_matrices_rf) <- paste0("Fold_", seq_along(conf_matrices))
 
-conf_matrices
+conf_matrices_rf
 
 all_rf_results <- bind_rows(rf_results)
 
@@ -489,7 +489,7 @@ feature_final <- feature_counts %>%
   filter(selection_frequency >= 0.50) %>%
   pull(feature)
 
-final_data <- db %>%
+final_data <- train_X %>%
   select(ID, Class, all_of(feature_final))
 
 final_rf <- train(
@@ -504,7 +504,7 @@ all_rf_results <- bind_rows(rf_results)
 class_levels <- levels(db$Class)
 
 #################################confusion matrix##############################
-sample_pred <- all_rf_results %>%
+sample_pred_rf <- all_rf_results %>%
   group_by(obs) %>%
   summarise(
     across(
@@ -515,60 +515,207 @@ sample_pred <- all_rf_results %>%
   )
 ###############################################################################
 
+rf_final_plot <- make_bound_plot(final_rf,final_data, 1, 2, "Random Forest")
 
+confusionMatrix(
+    data = final_rf$pred,
+    reference = x$obs
+  )
 
+confusionMatrix(final_rf, final_data)
 ```
 
-```{r}
-set.seed(2024)
-
-search_grid <- expand.grid(
-  mtry = seq(1, 3, by = 1)
-)
-
-rf_model <- train_model(trn, "rf", search_grid)
-
-confusionMatrix(predict(rf_model), trn$Class, positive = "DNML1")
-plot(rf_model)
-
-
-varImp(rf_model)
-
-
-make_bound_plot(rf_model,trn, 1, 2, "Random Forest")
-make_bound_plot(rf_model,trn, 1, 3, "Random Forest")
-make_bound_plot(rf_model,trn, 2, 3, "Random Forest")
-```
 
 # SVM
 
 ```{r}
-set.seed(2024)
+ctrl_none <- trainControl(
+  method = "none",
+  classProbs = TRUE
+)
 
-search_grid <- expand.grid(C = seq(0.01, 2, length = 20))
+svm_models <- vector("list", length(fold_data))
 
-# Preprocess with PCA and train SVM model
-svm_model <- train_model(trn, "svmLinear", search_grid = search_grid)
+for (i in seq_along(fold_data)) {
 
-plot(svm_model)
+  dat <- fold_data[[i]]
+
+  svm_models[[i]] <- train(
+    x = dat$train_X %>% select(-ID, -Class),
+    y = dat$train_X$Class,
+    method = "svmRadial",
+    trControl = ctrl_none
+  )
+}
+
+svm_results <- vector("list", length(fold_data))
+
+for (i in seq_along(fold_data)) {
+
+  dat <- fold_data[[i]]
+  model <- svm_models[[i]]
+
+  pred <- predict(
+    model,
+    newdata = dat$valid_X %>% select(-ID, -Class)
+  )
+
+  prob <- predict(
+    model,
+    newdata = dat$valid_X %>% select(-ID, -Class),
+    type = "prob"
+  )
+
+  svm_results[[i]] <- data.frame(
+  ID = dat$valid_X$ID,
+  obs = dat$valid_X$Class,
+  pred = pred,
+  prob
+)
+}
+
+svm_metrics <- lapply(seq_along(svm_results), function(i) {
+
+  metric_data <- svm_results[[i]] %>%
+    select(ID, obs, pred, all_of(levels(db$Class))) %>%
+    as.data.frame()
+
+  multiClassSummary(
+    data = metric_data,
+    lev = levels(db$Class),
+    model = svm_models[[i]]
+  )
+})
+
+svm_metrics <- bind_rows(
+  svm_metrics,
+  .id = "fold"
+)
+
+conf_matrices_svm <- lapply(svm_results, function(x) {
+  confusionMatrix(
+    data = x$pred,
+    reference = x$obs
+  )
+})
+
+names(conf_matrices_svm) <- paste0("Fold_", seq_along(conf_matrices_svm))
+
+conf_matrices_svm
+
+# Accuracy and Kappa for each fold
+accuracy <- sapply(conf_matrices_svm, function(x) x$overall["Accuracy"])
+kappa    <- sapply(conf_matrices_svm, function(x) x$overall["Kappa"])
+
+# Per-class metrics
+sensitivity <- sapply(conf_matrices_svm, function(x) x$byClass[, "Sensitivity"])
+specificity <- sapply(conf_matrices_svm, function(x) x$byClass[, "Specificity"])
+precision   <- sapply(conf_matrices_svm, function(x) x$byClass[, "Pos Pred Value"])
+
+f1 <- 2 * precision * sensitivity / (precision + sensitivity)
+
+metrics <- lapply(conf_matrices_svm, function(x) {
+
+  precision <- x$byClass[, "Pos Pred Value"]
+  recall    <- x$byClass[, "Sensitivity"]
+  f1        <- 2 * precision * recall / (precision + recall)
+
+  data.frame(
+    Class = rownames(x$byClass),
+    Precision = precision,
+    Recall = recall,
+    F1 = f1,
+    Specificity = x$byClass[, "Specificity"],
+    Balanced_Accuracy = x$byClass[, "Balanced Accuracy"]
+  )
+})
+
+names(metrics) <- names(conf_matrices_svm)
+
+macro_f1 <- sapply(metrics, function(x) {
+  mean(x$F1, na.rm = TRUE)
+})
+
+macro_f1
+
+macro_precision <- sapply(metrics, function(x) {
+  mean(x$Precision, na.rm = TRUE)
+})
+
+macro_recall <- sapply(metrics, function(x) {
+  mean(x$Recall, na.rm = TRUE)
+})
+
+accuracy <- sapply(conf_matrices_svm, function(x) {
+  unname(x$overall["Accuracy"])
+})
+
+all_svm_results <- bind_rows(svm_results)
 
 
-pred_svm <- predict(svm_model, as.matrix(trn[-c(1,2)]), type = "raw")
+feature_selection <- lapply(
+  fold_data,
+  function(x) x$selected_vars
+)
 
-confusionMatrix(pred_svm, trn$Class, positive = "DNM1L")
+feature_counts <- table(
+  unlist(feature_selection)
+)
 
-make_bound_plot(svm_model, trn, 1,2, "SVM")
-make_bound_plot(svm_model, trn, 1,3, "SVM")
-make_bound_plot(svm_model, trn, 2,3, "SVM")
+feature_counts <- data.frame(
+  feature = names(feature_counts),
+  n_selected = as.integer(feature_counts)
+) %>%
+  arrange(desc(n_selected))
 
+feature_final <- feature_counts %>%
+  mutate(
+    selection_frequency = n_selected / length(fold_data)
+  ) %>%
+  arrange(desc(selection_frequency)) %>%
+  filter(selection_frequency >= 0.50) %>%
+  pull(feature)
+
+final_data <- train_X %>%
+  select(ID, Class, all_of(feature_final))
+
+final_svm <- train(
+  x = final_data %>% select(-c(ID, Class)),
+  y = final_data$Class,
+  method = "svmRadial",
+  trControl = trainControl(method = "none")
+)
+
+all_svm_results <- bind_rows(svm_results)
+
+class_levels <- levels(db$Class)
+
+#################################confusion matrix##############################
+sample_pred_svm <- all_svm_results %>%
+  group_by(obs) %>%
+  summarise(
+    across(
+      all_of(class_levels),
+      mean
+    ),
+    .groups = "drop"
+  )
+###############################################################################
+
+svm_final_plot <- make_bound_plot(final_svm,final_data, 1, 2, "SVM")
+
+conf
 ```
+
+
+
 
 # Final model
 
 ```{r}
 set.seed(2024)
 
-model_list <- list(Neural = multi_model, SVM = svm_model, RF = rf_model)
+model_list <- list(SVM = final_svm, RF = final_rf)
 
 res <- resamples(model_list)
 
