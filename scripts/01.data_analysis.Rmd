@@ -12,7 +12,10 @@ library(GGally)
 library(glmnet)
 library(Hmisc)
 library(writexl)
+library(pROC)
 library(tidyverse)
+library(patchwork)
+library(janitor)
 ```
 
 ```{r read_data, message=FALSE, warning=FALSE}
@@ -37,16 +40,17 @@ id <- paste0(db$Class, unlist(
 
 db$Class <- as.factor(db$Class) 
 
-db$ID <- as.factor(id) 
+db$id <- as.factor(id) 
 
-# db$Class <- relevel(db$Class, ref = "DNM1L")
+# db$class <- relevel(db$class, ref = "DNM1L")
 
 #Removing redundant variables:
 
-colnames(db)
 
-db <- db %>%
+db <- db |>
   select(-c("Count", "TotalArea", "Branches", "TotalPerimeter", "TotalBranchLength", "BranchJunctions", "BranchEndPoints")) 
+
+db <- db |> clean_names() |> select(id, class, everything())
 
 ```
 
@@ -56,10 +60,10 @@ db <- db %>%
 
 
 long_db <- db %>%
-  pivot_longer(cols = -c(ID, Class), names_to = "Predictor", values_to = "Value")
+  pivot_longer(cols = -c(id, class), names_to = "Predictor", values_to = "Value")
 
 boxplt_all <- long_db %>%
-  ggplot(aes(x = Class, y = Value, fill = Class)) +
+  ggplot(aes(x = class, y = Value, fill = class)) +
   geom_boxplot() +
   facet_wrap(~ Predictor, scales = "free_y") +
   scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
@@ -68,7 +72,7 @@ boxplt_all <- long_db %>%
 ggsave("/home/sofia/Projects/DNM1L/plots/average/boxplt_all.png", boxplt_all, width = 12, height = 8, units = "in")
 
 densty_all <- long_db %>%
-  ggplot(aes(x = Value, fill = Class)) +
+  ggplot(aes(x = Value, fill = class)) +
   geom_density(alpha = 0.6) +
   facet_wrap(~ Predictor, scales = "free") +
   scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
@@ -77,7 +81,7 @@ densty_all <- long_db %>%
 ggsave("/home/sofia/Projects/DNM1L/plots/average/densty_all.png", densty_all, width = 12, height = 8, units = "in")
 
 hist_all <- long_db %>%
-  ggplot(aes(x = Value, fill = Class)) +
+  ggplot(aes(x = Value, fill = class)) +
   geom_histogram(alpha = 0.6) +
   facet_wrap(~ Predictor, scales = "free") +
   scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
@@ -89,12 +93,10 @@ ggsave("/home/sofia/Projects/DNM1L/plots/average/hist_all.png", hist_all, width 
 
 # Data Split
 
-# PCA
-
-```{r}
+```{r eval=FALSE}
 # 
 # db_res %>%
-#   select(-c(ID, Class)) %>%
+#   select(-c(id, class)) %>%
 #   ggpairs() # Así se ve la correlación entre variables. Es importante no tomar en cuenta 
 
 # Hay otras formas de hacer esto. Yo solo use esta función y quité las variables que eran redundantes, pero es que mis datos tenían variables que eran super dependientes unas de otras. El señorcito explica muchas cosas aquí que no he terminado de entender https://hbiostat.org/rmsc. En este es específico de bioestadñistica https://hbiostat.org/bbr. Estoy tratando de leer sus cosas. Si querés mejor no uses lo de redun().
@@ -102,14 +104,14 @@ ggsave("/home/sofia/Projects/DNM1L/plots/average/hist_all.png", hist_all, width 
 set.seed(123)
 
 
-X <- db %>% select(-ID, -Class)
-y <- db$Class
+X <- db %>% select(-id, -class)
+y <- db$class
 
 
 
 folds <- createMultiFolds(
   y = y,
-  k = 3,
+  k = 5,
   times = 10
 )
 
@@ -120,33 +122,36 @@ for (i in seq_along(folds)) {
   train_idx <- folds[[i]]
   valid_idx <- setdiff(seq_len(nrow(db)), train_idx)
 
-  train_data <- db[train_idx, ]
-  valid_data <- db[valid_idx, ]
+  # train_data <- db[train_idx, ]
+  # valid_data <- db[valid_idx, ]
 
-
+  train_X <- db[train_idx, ]
+  valid_X <- db[valid_idx, ]
   # -------------------------
   # redun ONLY on training
   # -------------------------
 
-  red_vars <- redun(
-    as.matrix(
-      train_data %>%
-        select(-ID, -Class)
-    )
-  )
-
-  selected_vars <- red_vars$In
+  # red_vars <- redun(
+  #   as.matrix(
+  #     train_data %>%
+  #       select(-id, -class)
+  #   )
+  # )
+  # 
+  # selected_vars <- red_vars$In
 
 
   # -------------------------
   # Selected variables
   # -------------------------
 
-  train_X <- train_data %>%
-    select(ID, Class, all_of(selected_vars))
+  # train_X <- train_data %>%
+  #   select(id, class, all_of(selected_vars))
+  # 
+  # valid_X <- valid_data %>%
+  #   select(id, class, all_of(selected_vars))
 
-  valid_X <- valid_data %>%
-    select(ID, Class, all_of(selected_vars))
+  
 
 
   # -------------------------
@@ -154,7 +159,7 @@ for (i in seq_along(folds)) {
   # -------------------------
 
   pca_fit <- prcomp(
-    train_X %>% select(-ID, -Class),
+    train_X %>% select(-id, -class),
     scale. = TRUE
   )
 
@@ -165,12 +170,12 @@ for (i in seq_along(folds)) {
 
   train_pca <- predict(
     pca_fit,
-    train_X %>% select(-ID, -Class)
+    train_X %>% select(-id, -class)
   )
 
   valid_pca <- predict(
     pca_fit,
-    valid_X %>% select(-ID, -Class)
+    valid_X %>% select(-id, -class)
   )
 
 
@@ -183,19 +188,20 @@ for (i in seq_along(folds)) {
     valid_idx = valid_idx,
     train_X = train_X,
     valid_X = valid_X,
-    red_vars = red_vars,
-    selected_vars = selected_vars,
+    # red_vars = red_vars,
+    # selected_vars = selected_vars,
     pca_fit = pca_fit,
     train_pca = train_pca,
     valid_pca = valid_pca
   )
 }
-library(patchwork)
+
+
 
 f1_pca <- autoplot(
   fold_data[[1]]$pca_fit,
   data = fold_data[[1]]$train_X,
-  colour = "Class",
+  colour = "class",
   size = 3,
   loadings = TRUE,
   loadings.label = TRUE
@@ -208,7 +214,7 @@ f1_pca <- autoplot(
 f2_pca <- autoplot(
   fold_data[[2]]$pca_fit,
   data = fold_data[[2]]$train_X,
-  colour = "Class",
+  colour = "class",
   size = 3,
   loadings = TRUE,
   loadings.label = TRUE
@@ -221,7 +227,7 @@ f2_pca <- autoplot(
 f3_pca <- autoplot(
   fold_data[[3]]$pca_fit,
   data = fold_data[[3]]$train_X,
-  colour = "Class",
+  colour = "class",
   size = 3,
   loadings = TRUE,
   loadings.label = TRUE
@@ -234,7 +240,7 @@ f3_pca <- autoplot(
 f4_pca <- autoplot(
   fold_data[[4]]$pca_fit,
   data = fold_data[[4]]$train_X,
-  colour = "Class",
+  colour = "class",
   size = 3,
   loadings = TRUE,
   loadings.label = TRUE
@@ -247,7 +253,7 @@ f4_pca <- autoplot(
 f5_pca <- autoplot(
   fold_data[[5]]$pca_fit,
   data = fold_data[[5]]$train_X,
-  colour = "Class",
+  colour = "class",
   size = 3,
   loadings = TRUE,
   loadings.label = TRUE
@@ -258,498 +264,230 @@ f5_pca <- autoplot(
   )
 
 pca_first_folds <- f1_pca + f2_pca + f3_pca + f4_pca + f5_pca
+
+
+
 ```
 
 # Defining model training functions
 
-```{r}
-
-set.seed(2024)
+```{r, eval=TRUE}
 
 
-
-# Holi! Esto lo hice para plotear las predicciones de los modelos. No creo que sea necesario. Tenía que transformar a principal components porque necesitaba 2 dimensiones. chat me ayudó.
-
-make_bound_plot <- function(mod, dat, pcx = 1, pcy = 2, alg) {
-  set.seed(2024)  # Ensure reproducibility in PCA transformation
-
-  preproc <- preProcess(dat[-c(1,2)], method = c("pca"))
-  pca_transformed <- predict(preproc, dat[-c(1,2)])
-  pca_transformed <- data.frame(pca_transformed, Class = dat$Class)
-
-  colnames(pca_transformed)[pcx] <- "X"
-  colnames(pca_transformed)[pcy] <- "Y"
-
-  # Create a grid of points in the PCA-transformed space
-  x_min <- min(pca_transformed$X) - 1
-  x_max <- max(pca_transformed$X) + 1
-  y_min <- min(pca_transformed$Y) - 1
-  y_max <- max(pca_transformed$Y) + 1
-
-  # Generate grid points
-  grid <- expand.grid(X = seq(x_min, x_max, length.out = 100),
-                      Y = seq(y_min, y_max, length.out = 100))
-
-  # Combine the grid with zeros for other components
-  grid_full <- data.frame(matrix(0, nrow = nrow(grid), ncol = ncol(pca_transformed)-1))
-  colnames(grid_full) <- colnames(pca_transformed)[-ncol(pca_transformed)]
-  grid_full[, c(pcx, pcy)] <- grid
-
-  # Inverse transform the grid to the original feature space
-  inverse_pca <- function(pca_model, pca_data) {
-    center <- pca_model$mean
-    scale <- pca_model$std
-    rotation <- pca_model$rotation
-    
-    # Calculate the original data matrix
-    original_matrix <- as.matrix(pca_data) %*% t(rotation)
-    
-    # Re-scale and re-center
-    original_matrix <- sweep(original_matrix, 2, scale, `*`)
-    original_matrix <- sweep(original_matrix, 2, center, `+`)
-    
-    return(as.data.frame(original_matrix))
-  }
-
-  # Perform inverse PCA transformation on the grid
-  grid_original <- inverse_pca(preproc, grid_full)
-  colnames(grid_original) <- colnames(dat[-c(1,2)])
-
-  # Predict on the original feature space
-  grid_original$Class <- predict(mod, grid_original, type = "raw")
-  grid_original$Class <- relevel(grid_original$Class, ref = "Control")
-
-  # Plot the decision boundary
+make_bound_plot <- function(mod, dat, pcx = 1, pcy = 2, alg = "Model") {
+  set.seed(2024)
+  
+  # 1. Extract feature data and preprocessing object from model
+  feature_data <- dat %>% select(-c(1, 2)) # Assumes cols 1 & 2 are non-features (e.g., id, class)
+  preproc <- mod$preProcess
+  
+  # 2. Transform original data to PCA space
+  pca_coords <- predict(preproc, feature_data)
+  
+  plot_df <- data.frame(
+    X = pca_coords[, pcx],
+    Y = pca_coords[, pcy],
+    class = dat$class
+  )
+  
+  # 3. Create grid in 2D PCA space
+  x_seq <- seq(min(plot_df$X) - 1, max(plot_df$X) + 1, length.out = 100)
+  y_seq <- seq(min(plot_df$Y) - 1, max(plot_df$Y) + 1, length.out = 100)
+  grid <- expand.grid(X = x_seq, Y = y_seq)
+  
+  # Build full PCA grid (fill unselected components with 0 / mean)
+  grid_full <- as.data.frame(matrix(0, nrow = nrow(grid), ncol = ncol(pca_coords)))
+  colnames(grid_full) <- colnames(pca_coords)
+  grid_full[, pcx] <- grid$X
+  grid_full[, pcy] <- grid$Y
+  
+  # 4. Inverse PCA transformation back to original feature space
+  rotation <- preproc$rotation
+  center   <- if (!is.null(preproc$mean)) preproc$mean else rep(0, nrow(rotation))
+  scale    <- if (!is.null(preproc$std)) preproc$std else rep(1, nrow(rotation))
+  
+  rotation_sub  <- rotation[, colnames(grid_full), drop = FALSE]
+  grid_original <- as.matrix(grid_full) %*% t(rotation_sub)
+  grid_original <- sweep(grid_original, 2, scale, `*`)
+  grid_original <- sweep(grid_original, 2, center, `+`)
+  
+  grid_original <- as.data.frame(grid_original)
+  colnames(grid_original) <- colnames(feature_data)
+  
+  # 5. Predict on original feature space
+  grid$class <- predict(mod, newdata = grid_original)
+  
+  # 6. Plot decision regions and actual data points
   ggplot() +
-    geom_point(data = pca_transformed, aes(x = X, y = Y, color = Class), size = 2) +
-    geom_tile(data = grid, aes(x = X, y = Y, fill = grid_original$Class), alpha = 0.3) +
-    labs(title = paste(alg, "Decision Boundary on PCA-projected Data"),
-         x = paste("Principal Component", pcx),
-         y = paste("Principal Component", pcy)) +
+    geom_tile(data = grid, aes(x = X, y = Y, fill = class), alpha = 0.3) +
+    geom_point(data = plot_df, aes(x = X, y = Y, color = class), size = 2.5, stroke = 0.8) +
+    scale_color_manual(name = "Reference", values = c("#a39b9b", "#67c7c5", "#f2de79")) +
+    scale_fill_manual(name = "Prediction", values = c("#a39b9b", "#67c7c5", "#f2de79")) +
+    labs(
+      title = paste(alg, "- Decision Boundary (PCA Space)"),
+      x = paste("Principal Component", pcx),
+      y = paste("Principal Component", pcy)
+    ) +
     theme_minimal() +
-    scale_color_manual(name = "Reference", labels = levels(pca_transformed$Class), values = c("#a39b9b",  "#67c7c5", "#f2de79")) +
-    scale_fill_manual(name = "Prediction", labels = levels(pca_transformed$Class), values = c("#a39b9b",  "#67c7c5", "#f2de79"))
+    theme(
+      plot.title = element_text(face = "bold", size = 12),
+      panel.grid.minor = element_blank()
+    )
 }
 
 
 ```
-
-# Multinomial logistic regression with neural networks
-
-```{r, message=FALSE}
-
-set.seed(2024)
-
-search_grid <- expand.grid(
-  decay = seq(0, 0.2, by = 0.01)
-)
-
-
-multi_model <- train_model(trn, "multinom", search_grid)
-
-plot(multi_model)
-
-varImp(multi_model)
-
-pred_multi_model <- data.frame(Prediction = predict(multi_model, newx = as.matrix(trn[-c(1,2)]), type="raw"))
-
-trn_class_res <- data.frame(ID = trn$ID, Prediction = pred_multi_model, Reference = trn$Class)
-
-nn_cnfmat <- confusionMatrix(
-  predict(multi_model),
-  trn$Class,
-  positive = "DNML1"
-)
-
-
-tblmat <- as.table(nn_cnfmat$table)
-tblbyclass <- data.frame(nn_cnfmat$byClass)
-
-write_xlsx(tblbyclass, here("/home/sofia/Projects/DNM1L/plots/average/nn/train/tables/confusion_matrix.xlsx"))
-
-confint(multi_model$finalModel)
-
-
-
-nn_trn_12_bp <- make_bound_plot(multi_model, trn, 1, 2, "Neural Network")
-
-ggsave("/home/sofia/Projects/DNM1L/plots/average/nn/train/nn_trn_12_bp.png", nn_trn_12_bp, width = 8, height = 6, units = "in")
-
-nn_trn_13_bp <- make_bound_plot(multi_model, trn, 1, 3, "Neural Network") #fix this, the boundaries make no sense, maybe just use pc 1 and 2 plot
-
-ggsave("/home/sofia/Projects/DNM1L/plots/average/nn/train/nn_trn_13_bp.png", nn_trn_13_bp, width = 8, height = 6, units = "in")
-
-nn_trn_2_3_bp <-make_bound_plot(multi_model, trn, 2, 3, "Neural Network")
-
-ggsave("/home/sofia/Projects/DNM1L/plots/average/nn/train/nn_trn_2_3_bp.png", nn_trn_2_3_bp, width = 8, height = 6, units = "in")
-
-```
-
-# Random Forest
-
-```{r }
-set.seed(2024)
-
-ctrl_none <- trainControl(
-  method = "none"
-)
-
-rf_models <- vector("list", length(fold_data))
-
-for (i in seq_along(fold_data)) {
-
-  dat <- fold_data[[i]]
-
-  rf_models[[i]] <- train(
-    x = dat$train_X %>% select(-ID, -Class),
-    y = dat$train_X$Class,
-    method = "rf",
-    trControl = ctrl_none
-  )
-}
-
-rf_results <- vector("list", length(fold_data))
-
-for (i in seq_along(fold_data)) {
-
-  dat <- fold_data[[i]]
-  model <- rf_models[[i]]
-
-  pred <- predict(
-    model,
-    newdata = dat$valid_X %>% select(-ID, -Class)
-  )
-
-  prob <- predict(
-    model,
-    newdata = dat$valid_X %>% select(-ID, -Class),
-    type = "prob"
-  )
-
-  rf_results[[i]] <- data.frame(
-  ID = dat$valid_X$ID,
-  obs = dat$valid_X$Class,
-  pred = pred,
-  prob
-)
-}
-
-rf_metrics <- lapply(seq_along(rf_results), function(i) {
-
-  metric_data <- rf_results[[i]] %>%
-    select(ID, obs, pred, all_of(levels(db$Class))) %>%
-    as.data.frame()
-
-  multiClassSummary(
-    data = metric_data,
-    lev = levels(db$Class),
-    model = rf_models[[i]]
-  )
-})
-
-rf_metrics <- bind_rows(
-  rf_metrics,
-  .id = "fold"
-)
-
-conf_matrices_rf <- lapply(rf_results, function(x) {
-  confusionMatrix(
-    data = x$pred,
-    reference = x$obs
-  )
-})
-
-names(conf_matrices_rf) <- paste0("Fold_", seq_along(conf_matrices))
-
-conf_matrices_rf
-
-all_rf_results <- bind_rows(rf_results)
-
-
-feature_selection <- lapply(
-  fold_data,
-  function(x) x$selected_vars
-)
-
-feature_counts <- table(
-  unlist(feature_selection)
-)
-
-feature_counts <- data.frame(
-  feature = names(feature_counts),
-  n_selected = as.integer(feature_counts)
-) %>%
-  arrange(desc(n_selected))
-
-feature_final <- feature_counts %>%
-  mutate(
-    selection_frequency = n_selected / length(fold_data)
-  ) %>%
-  arrange(desc(selection_frequency)) %>%
-  filter(selection_frequency >= 0.50) %>%
-  pull(feature)
-
-final_data <- train_X %>%
-  select(ID, Class, all_of(feature_final))
-
-final_rf <- train(
-  x = final_data %>% select(-c(ID, Class)),
-  y = final_data$Class,
-  method = "rf",
-  trControl = trainControl(method = "none")
-)
-
-all_rf_results <- bind_rows(rf_results)
-
-class_levels <- levels(db$Class)
-
-#################################confusion matrix##############################
-sample_pred_rf <- all_rf_results %>%
-  group_by(obs) %>%
-  summarise(
-    across(
-      all_of(class_levels),
-      mean
-    ),
-    .groups = "drop"
-  )
-###############################################################################
-
-rf_final_plot <- make_bound_plot(final_rf,final_data, 1, 2, "Random Forest")
-
-confusionMatrix(
-    data = final_rf$pred,
-    reference = x$obs
-  )
-
-confusionMatrix(final_rf, final_data)
-```
-
-
-# SVM
 
 ```{r}
-ctrl_none <- trainControl(
-  method = "none",
+
+ctrl <- trainControl(
+  method = "repeatedcv",
+  number = 5,
+  repeats = 10,
+  savePredictions = "final",
+  summaryFunction = multiClassSummary, # Generates Macro F1, LogLoss, etc.
   classProbs = TRUE
 )
 
-svm_models <- vector("list", length(fold_data))
+# Shared preprocessing: Center, Scale, and PCA (computed strictly inside each fold)
+pre_proc <- c("center", "scale", "pca")
 
-for (i in seq_along(fold_data)) {
 
-  dat <- fold_data[[i]]
 
-  svm_models[[i]] <- train(
-    x = dat$train_X %>% select(-ID, -Class),
-    y = dat$train_X$Class,
-    method = "svmRadial",
-    trControl = ctrl_none
-  )
-}
+# Model 1: Ridge Multinomial Regression
 
-svm_results <- vector("list", length(fold_data))
-
-for (i in seq_along(fold_data)) {
-
-  dat <- fold_data[[i]]
-  model <- svm_models[[i]]
-
-  pred <- predict(
-    model,
-    newdata = dat$valid_X %>% select(-ID, -Class)
-  )
-
-  prob <- predict(
-    model,
-    newdata = dat$valid_X %>% select(-ID, -Class),
-    type = "prob"
-  )
-
-  svm_results[[i]] <- data.frame(
-  ID = dat$valid_X$ID,
-  obs = dat$valid_X$Class,
-  pred = pred,
-  prob
-)
-}
-
-svm_metrics <- lapply(seq_along(svm_results), function(i) {
-
-  metric_data <- svm_results[[i]] %>%
-    select(ID, obs, pred, all_of(levels(db$Class))) %>%
-    as.data.frame()
-
-  multiClassSummary(
-    data = metric_data,
-    lev = levels(db$Class),
-    model = svm_models[[i]]
-  )
-})
-
-svm_metrics <- bind_rows(
-  svm_metrics,
-  .id = "fold"
+set.seed(123)
+fit_glm <- train(
+  class ~ ., data = db %>% select(-id),
+  method = "glmnet",
+  preProcess = pre_proc,
+  tuneGrid = expand.grid(alpha = 0, lambda = seq(0.01, 1, length = 10)),
+  trControl = ctrl,
+  metric = "logLoss"
 )
 
-conf_matrices_svm <- lapply(svm_results, function(x) {
-  confusionMatrix(
-    data = x$pred,
-    reference = x$obs
+# Model 2: Linear SVM
+set.seed(123)
+fit_svm <- train(
+  class ~ ., data = db %>% select(-id),
+  method = "svmLinear",
+  preProcess = pre_proc,
+  tuneGrid = expand.grid(C = c(0.1, 1, 10)),
+  trControl = ctrl,
+  metric = "logLoss"
+)
+
+# Model 3: Naive Bayes
+set.seed(123)
+fit_nb <- train(
+  class ~ ., data = db %>% select(-id),
+  method = "naive_bayes",
+  preProcess = pre_proc,
+  trControl = ctrl,
+  metric = "logLoss"
+)
+
+# ------------------------------------------------------------------------------
+# 4. Extract Out-of-Fold Metrics & Compare
+# ------------------------------------------------------------------------------
+results <- resamples(list(
+  Ridge_GLM = fit_glm,
+  Linear_SVM = fit_svm,
+  Naive_Bayes = fit_nb
+))
+
+summary(results)
+
+plot_data <- results$values |>
+  pivot_longer(
+    cols = -Resample,
+    names_to = c("model", "metric"),
+    names_sep = "~",
+    values_to = "value"
   )
-})
 
-names(conf_matrices_svm) <- paste0("Fold_", seq_along(conf_matrices_svm))
+bx_plot <- na.omit(plot_data) |>
+  ggplot(aes(x = model, y = value, fill = model, color = model)) +
+  geom_boxplot(alpha = .5) +
+  geom_point() +
+  geom_jitter(width = .1) +
+  facet_wrap(~metric, scales = "free_y") +
+  scale_color_manual(values = c("#5bc0be", "#6d52f3", "#d264b6")) +
+  scale_fill_manual(values = c("#84ffc9", "#aab2ff", "#eca0ff")) +
+  theme_classic()
 
-conf_matrices_svm
-
-# Accuracy and Kappa for each fold
-accuracy <- sapply(conf_matrices_svm, function(x) x$overall["Accuracy"])
-kappa    <- sapply(conf_matrices_svm, function(x) x$overall["Kappa"])
-
-# Per-class metrics
-sensitivity <- sapply(conf_matrices_svm, function(x) x$byClass[, "Sensitivity"])
-specificity <- sapply(conf_matrices_svm, function(x) x$byClass[, "Specificity"])
-precision   <- sapply(conf_matrices_svm, function(x) x$byClass[, "Pos Pred Value"])
-
-f1 <- 2 * precision * sensitivity / (precision + sensitivity)
-
-metrics <- lapply(conf_matrices_svm, function(x) {
-
-  precision <- x$byClass[, "Pos Pred Value"]
-  recall    <- x$byClass[, "Sensitivity"]
-  f1        <- 2 * precision * recall / (precision + recall)
-
-  data.frame(
-    Class = rownames(x$byClass),
-    Precision = precision,
-    Recall = recall,
-    F1 = f1,
-    Specificity = x$byClass[, "Specificity"],
-    Balanced_Accuracy = x$byClass[, "Balanced Accuracy"]
-  )
-})
-
-names(metrics) <- names(conf_matrices_svm)
-
-macro_f1 <- sapply(metrics, function(x) {
-  mean(x$F1, na.rm = TRUE)
-})
-
-macro_f1
-
-macro_precision <- sapply(metrics, function(x) {
-  mean(x$Precision, na.rm = TRUE)
-})
-
-macro_recall <- sapply(metrics, function(x) {
-  mean(x$Recall, na.rm = TRUE)
-})
-
-accuracy <- sapply(conf_matrices_svm, function(x) {
-  unname(x$overall["Accuracy"])
-})
-
-all_svm_results <- bind_rows(svm_results)
+ggsave("/home/sofia/Projects/DNM1L/plots/average/bx_plot_summary_stats.png", bx_plot, width = 12, height = 12, units = "in")
 
 
-feature_selection <- lapply(
-  fold_data,
-  function(x) x$selected_vars
-)
+confusionMatrix(fit_svm)
 
-feature_counts <- table(
-  unlist(feature_selection)
-)
 
-feature_counts <- data.frame(
-  feature = names(feature_counts),
-  n_selected = as.integer(feature_counts)
-) %>%
-  arrange(desc(n_selected))
+# Get the OOF predictions
+p <- fit_svm$pred %>%
+  filter(C == fit_svm$bestTune$C)
 
-feature_final <- feature_counts %>%
-  mutate(
-    selection_frequency = n_selected / length(fold_data)
-  ) %>%
-  arrange(desc(selection_frequency)) %>%
-  filter(selection_frequency >= 0.50) %>%
-  pull(feature)
-
-final_data <- train_X %>%
-  select(ID, Class, all_of(feature_final))
-
-final_svm <- train(
-  x = final_data %>% select(-c(ID, Class)),
-  y = final_data$Class,
-  method = "svmRadial",
-  trControl = trainControl(method = "none")
-)
-
-all_svm_results <- bind_rows(svm_results)
-
-class_levels <- levels(db$Class)
-
-#################################confusion matrix##############################
-sample_pred_svm <- all_svm_results %>%
-  group_by(obs) %>%
+# Average predicted probabilities for each observation across repeats
+p_avg <- p %>%
+  group_by(rowIndex) %>%
   summarise(
-    across(
-      all_of(class_levels),
-      mean
-    ),
+    across(all_of(levels(db$class)), mean),
+    obs = first(obs),
     .groups = "drop"
   )
-###############################################################################
 
-svm_final_plot <- make_bound_plot(final_svm,final_data, 1, 2, "SVM")
+# Convert averaged probabilities to predicted class
+p_avg$pred <- factor(
+  colnames(p_avg)[max.col(p_avg[, levels(db$class)])],
+  levels = levels(db$class)
+)
 
-conf
+# Single confusion matrix
+confusionMatrix(
+  data = p_avg$pred,
+  reference = p_avg$obs
+)
+
+p_svm12 <- make_bound_plot(
+  mod = fit_svm, 
+  dat = db, 
+  pcx = 1, 
+  pcy = 2, 
+  alg = "Linear SVM (C = 10)"
+)
+
+p_svm23 <- make_bound_plot(
+  mod = fit_svm, 
+  dat = db, 
+  pcx = 2, 
+  pcy = 3, 
+  alg = "Linear SVM (C = 10)"
+)
+
+
+all_pcs <- p_svm12 + p_svm23
+
+ggsave("/home/sofia/Projects/DNM1L/plots/average/all_pcs.png", all_pcs, width = 12, height = 8, units = "in")
+
+# Convert table to percentage format for heatmap labels
+cm_prop <- confusionMatrix(fit_svm, norm = "overall")
+df <- as.data.frame(cm_prop$table)
+
+# Create formatted ggplot heatmap
+p <- ggplot(df, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "white", linewidth = 1) +
+  geom_text(aes(label = sprintf("%.1f%%", Freq)), size = 5, fontface = "bold") +
+  scale_fill_gradient(low = "#e0f2fe", high = "#0284c7") +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Out-of-Fold Confusion Matrix",
+    x = "Actual Class (Reference)",
+    y = "Predicted Class",
+    fill = "Proportion"
+  ) +
+  theme(panel.grid = element_blank())
+
+# Save directly to JPEG at 300 DPI
+ggsave("/home/sofia/Projects/DNM1L/plots/average/confusion_matrix_heatmap.jpeg", plot = p, width = 6, height = 5, dpi = 300)
+
 ```
 
-
-
-
-# Final model
-
-```{r}
-set.seed(2024)
-
-model_list <- list(SVM = final_svm, RF = final_rf)
-
-res <- resamples(model_list)
-
-sumres <- summary(res)
-
-res
-sumres
-
-
-
-as.table(sumres$statistics$Accuracy)
-as.table(sumres$statistics$Kappa)
-
-# write_xlsx()
-
-tst$Class <- relevel(tst$Class, ref = "DNM1L")
-
-pred_tst <- predict(svm_model, tst[-c(1,2)], type = "raw")
-final_cnfmat <- confusionMatrix(pred_tst, tst$Class, positive = "DNM1L")
-
-tblmat <- as.table(final_cnfmat$table)
-tblbyclass <- data.frame(final_cnfmat$byClass)
-
-write_xlsx(tblbyclass, here("tables/per_class.xlsx"))
-
-tst$Class <- relevel(tst$Class, ref = "Control")
-
-final_cnfmat
-make_bound_plot(svm_model, tst,1,2, "SVM")
-
-ggsave(here("plots/des_boun.jpeg"))
-
-make_bound_plot(svm_model, tst, 1,3, "SVM")
-make_bound_plot(svm_model, tst ,2,3, "SVM")
-
-
-```
