@@ -58,37 +58,45 @@ db <- db |> clean_names() |> select(id, class, everything())
 
 ```{r, message=FALSE, warning=FALSE}
 
+orig_ids <- setNames(c("Mean Area", "1/Mean Area", "Mean Perimeter", "Mean Aspect Ratio", "Mean Form Factor", "Branches Mito", "Total Branch Length/Mito", "Mean Branch Length", "Branch Junctions Mito", "Branch End Points Mito", "Mean Branch Diameter"), colnames(db)[-c(1,2)])
+
 
 long_db <- db %>%
-  pivot_longer(cols = -c(id, class), names_to = "Predictor", values_to = "Value")
+  pivot_longer(cols = -c(id, class), names_to = "Predictor", values_to = "Value") 
+
+long_db$PredictorClean <- orig_ids[long_db$Predictor]
 
 boxplt_all <- long_db %>%
-  ggplot(aes(x = class, y = Value, fill = class)) +
+  ggplot(aes(x = class, y = Value, fill = class, color=class)) +
   geom_boxplot() +
-  facet_wrap(~ Predictor, scales = "free_y") +
-  scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
+  facet_wrap(~ PredictorClean, scales = "free_y") +
+  scale_color_manual(values = c("#495057",  "#5c95ff", "#e76f51")) +
+  scale_fill_manual(values = c("#a39b9b",  "#a2d2ff", "#f4a261")) +
   theme_classic()
 
-ggsave("/home/sofia/Projects/DNM1L/plots/average/boxplt_all.png", boxplt_all, width = 12, height = 8, units = "in")
+ggsave("/home/sofia/Projects/DNM1L/plots/average/boxplt_all.png", boxplt_all, width = 14, height = 8, units = "in")
 
 densty_all <- long_db %>%
   ggplot(aes(x = Value, fill = class)) +
   geom_density(alpha = 0.6) +
   facet_wrap(~ Predictor, scales = "free") +
-  scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
+  scale_color_manual(values = c("#495057",  "#5c95ff", "#e76f51")) +
+  scale_fill_manual(values = c("#a39b9b",  "#a2d2ff", "#f4a261")) +
   theme_classic()
 
-ggsave("/home/sofia/Projects/DNM1L/plots/average/densty_all.png", densty_all, width = 12, height = 8, units = "in")
+ggsave("/home/sofia/Projects/DNM1L/plots/average/densty_all.png", densty_all, width = 14, height = 8, units = "in")
 
 hist_all <- long_db %>%
   ggplot(aes(x = Value, fill = class)) +
   geom_histogram(alpha = 0.6) +
   facet_wrap(~ Predictor, scales = "free") +
-  scale_fill_manual(values = c("#a39b9b",  "#7babdb", "#f2de79")) +
+  scale_color_manual(values = c("#495057",  "#5c95ff", "#e76f51")) +
+  scale_fill_manual(values = c("#a39b9b",  "#a2d2ff", "#f4a261")) +
   theme_classic()
 
-ggsave("/home/sofia/Projects/DNM1L/plots/average/hist_all.png", hist_all, width = 12, height = 8, units = "in")
+ggsave("/home/sofia/Projects/DNM1L/plots/average/hist_all.png", hist_all, width = 14, height = 8, units = "in")
  
+
 ```
 
 # Data Split
@@ -208,7 +216,7 @@ f1_pca <- autoplot(
 ) +
   theme_classic() +
   scale_colour_manual(
-    values = c("#a39b9b", "#7babdb", "#f2de79")
+    values = c("#a39b9b", "#a2d2ff", "#f4a261")
   )
 
 f2_pca <- autoplot(
@@ -221,7 +229,7 @@ f2_pca <- autoplot(
 ) +
   theme_classic() +
   scale_colour_manual(
-    values = c("#a39b9b", "#7babdb", "#f2de79")
+    values = c("#a39b9b", "#a2d2ff", "#f4a261")
   )
 
 f3_pca <- autoplot(
@@ -234,7 +242,7 @@ f3_pca <- autoplot(
 ) +
   theme_classic() +
   scale_colour_manual(
-    values = c("#a39b9b", "#7babdb", "#f2de79")
+    values = c("#a39b9b", "#a2d2ff", "#f4a261")
   )
 
 f4_pca <- autoplot(
@@ -247,7 +255,7 @@ f4_pca <- autoplot(
 ) +
   theme_classic() +
   scale_colour_manual(
-    values = c("#a39b9b", "#7babdb", "#f2de79")
+    values = c("#a39b9b", "#a2d2ff", "#f4a261")
   )
 
 f5_pca <- autoplot(
@@ -260,7 +268,7 @@ f5_pca <- autoplot(
 ) +
   theme_classic() +
   scale_colour_manual(
-    values = c("#a39b9b", "#7babdb", "#f2de79")
+    values = c("#a39b9b", "#a2d2ff", "#f4a261")
   )
 
 pca_first_folds <- f1_pca + f2_pca + f3_pca + f4_pca + f5_pca
@@ -321,14 +329,14 @@ make_bound_plot <- function(mod, dat, pcx = 1, pcy = 2, alg = "Model") {
   ggplot() +
     geom_tile(data = grid, aes(x = X, y = Y, fill = class), alpha = 0.3) +
     geom_point(data = plot_df, aes(x = X, y = Y, color = class), size = 2.5, stroke = 0.8) +
-    scale_color_manual(name = "Reference", values = c("#a39b9b", "#67c7c5", "#f2de79")) +
-    scale_fill_manual(name = "Prediction", values = c("#a39b9b", "#67c7c5", "#f2de79")) +
+    scale_color_manual(values = c("#a39b9b",  "#5c95ff", "#e76f51")) +    
+    scale_fill_manual(name = "Prediction", values = c("#a39b9b", "#add9f4", "#f4a261")) +
     labs(
       title = paste(alg, "- Decision Boundary (PCA Space)"),
       x = paste("Principal Component", pcx),
       y = paste("Principal Component", pcy)
     ) +
-    theme_minimal() +
+    theme_classic() +
     theme(
       plot.title = element_text(face = "bold", size = 12),
       panel.grid.minor = element_blank()
@@ -363,7 +371,7 @@ fit_glm <- train(
   preProcess = pre_proc,
   tuneGrid = expand.grid(alpha = 0, lambda = seq(0.01, 1, length = 10)),
   trControl = ctrl,
-  metric = "logLoss"
+  metric = "Accuracy"
 )
 
 # Model 2: Linear SVM
@@ -372,19 +380,30 @@ fit_svm <- train(
   class ~ ., data = db %>% select(-id),
   method = "svmLinear",
   preProcess = pre_proc,
-  tuneGrid = expand.grid(C = c(0.1, 1, 10)),
+  tuneGrid = expand.grid(C = c(0.1, 0.5, 1, 5, 10)),
   trControl = ctrl,
-  metric = "logLoss"
+  metric = "Accuracy"
 )
 
-# Model 3: Naive Bayes
+# Model 3: RBF SVM
+set.seed(123)
+fit_svm_radial <- train(
+  class ~ ., data = db %>% select(-id),
+  method = "svmRadialCost",
+  preProcess = pre_proc,
+  tuneGrid = expand.grid(C = c(0.1, 0.5, 1, 5, 10)),
+  trControl = ctrl,
+  metric = "Accuracy"
+)
+
+# Model 4: Naive Bayes
 set.seed(123)
 fit_nb <- train(
   class ~ ., data = db %>% select(-id),
   method = "naive_bayes",
   preProcess = pre_proc,
   trControl = ctrl,
-  metric = "logLoss"
+  metric = "Accuracy"
 )
 
 # ------------------------------------------------------------------------------
@@ -393,10 +412,28 @@ fit_nb <- train(
 results <- resamples(list(
   Ridge_GLM = fit_glm,
   Linear_SVM = fit_svm,
+  RBF_SVM = fit_svm_radial,
   Naive_Bayes = fit_nb
 ))
 
-summary(results)
+
+res_stat <- summary(diff(results))
+
+tables <- lapply(res_stat$table, as.data.frame)
+
+library(gridExtra)
+
+for (metric in names(tables)) {
+  p <- tableGrob(tables[[metric]], rows = NULL)
+
+  ggsave(
+    filename = paste0(metric, ".png"),
+    plot = p,
+    width = 10,
+    height = max(3, nrow(tables[[metric]]) * 0.4),
+    dpi = 300
+  )
+}
 
 plot_data <- results$values |>
   pivot_longer(
@@ -412,71 +449,71 @@ bx_plot <- na.omit(plot_data) |>
   geom_point() +
   geom_jitter(width = .1) +
   facet_wrap(~metric, scales = "free_y") +
-  scale_color_manual(values = c("#5bc0be", "#6d52f3", "#d264b6")) +
-  scale_fill_manual(values = c("#84ffc9", "#aab2ff", "#eca0ff")) +
+  scale_color_manual(values = c("#5bc0be", "#6d52f3", "#d264b6", "#cca000")) +
+  scale_fill_manual(values = c("#84ffc9", "#aab2ff", "#eca0ff", "#ffe156")) +
   theme_classic()
 
 ggsave("/home/sofia/Projects/DNM1L/plots/average/bx_plot_summary_stats.png", bx_plot, width = 12, height = 12, units = "in")
 
 
-confusionMatrix(fit_svm)
+confusionMatrix(fit_svm_radial)
 
-
-# Get the OOF predictions
-p <- fit_svm$pred %>%
-  filter(C == fit_svm$bestTune$C)
-
-# Average predicted probabilities for each observation across repeats
-p_avg <- p %>%
-  group_by(rowIndex) %>%
-  summarise(
-    across(all_of(levels(db$class)), mean),
-    obs = first(obs),
-    .groups = "drop"
-  )
-
-# Convert averaged probabilities to predicted class
-p_avg$pred <- factor(
-  colnames(p_avg)[max.col(p_avg[, levels(db$class)])],
-  levels = levels(db$class)
-)
-
-# Single confusion matrix
-confusionMatrix(
-  data = p_avg$pred,
-  reference = p_avg$obs
-)
 
 p_svm12 <- make_bound_plot(
-  mod = fit_svm, 
+  mod = fit_svm_radial, 
   dat = db, 
   pcx = 1, 
   pcy = 2, 
-  alg = "Linear SVM (C = 10)"
+  alg = "Linear SVM (C = 5)"
 )
 
 p_svm23 <- make_bound_plot(
-  mod = fit_svm, 
+  mod = fit_svm_radial, 
   dat = db, 
   pcx = 2, 
   pcy = 3, 
-  alg = "Linear SVM (C = 10)"
+  alg = "Linear SVM (C = 5)"
 )
 
 
-all_pcs <- p_svm12 + p_svm23
+all_pcs <- (p_svm12 / p_svm23) + plot_layout(guides = "collect")
 
-ggsave("/home/sofia/Projects/DNM1L/plots/average/all_pcs.png", all_pcs, width = 12, height = 8, units = "in")
+ggsave("/home/sofia/Projects/DNM1L/plots/average/all_pcs.png", all_pcs, width = 10, height = 14, units = "in")
 
-# Convert table to percentage format for heatmap labels
-cm_prop <- confusionMatrix(fit_svm, norm = "overall")
-df <- as.data.frame(cm_prop$table)
+
+
+#1. Extract the raw matrix from caret output
+cm_matrix <- confusionMatrix(fit_svm)$table
+
+# 2. Divide each column by its column sum (margin = 2) to get class proportions
+class_pct <- prop.table(cm_matrix, margin = 2) * 100
+
+# 3. Round to 1 decimal place
+class_pct <- round(class_pct, 1)
+df <- as.data.frame(class_pct)
 
 # Create formatted ggplot heatmap
 p <- ggplot(df, aes(x = Reference, y = Prediction, fill = Freq)) +
   geom_tile(color = "white", linewidth = 1) +
-  geom_text(aes(label = sprintf("%.1f%%", Freq)), size = 5, fontface = "bold") +
-  scale_fill_gradient(low = "#e0f2fe", high = "#0284c7") +
+  geom_text(
+    aes(
+      label = sprintf("%.1f%%", Freq),
+      color = Freq > 70
+    ),
+    size = 5,
+    fontface = "bold"
+  ) +
+  scale_color_manual(
+    values = c("FALSE" = "black", "TRUE" = "white"),
+    guide = "none"
+  ) +
+  scale_fill_gradient2(
+    low = "#ebf2fa",
+    mid = "#3498db",
+    high = "#0f3a57",
+    midpoint = 50,
+    limits = c(0, 100)
+  ) +
   theme_minimal(base_size = 14) +
   labs(
     title = "Out-of-Fold Confusion Matrix",
@@ -484,10 +521,12 @@ p <- ggplot(df, aes(x = Reference, y = Prediction, fill = Freq)) +
     y = "Predicted Class",
     fill = "Proportion"
   ) +
-  theme(panel.grid = element_blank())
+  theme(panel.grid = element_blank()) +
+  coord_cartesian(reverse = "y")
 
 # Save directly to JPEG at 300 DPI
-ggsave("/home/sofia/Projects/DNM1L/plots/average/confusion_matrix_heatmap.jpeg", plot = p, width = 6, height = 5, dpi = 300)
+ggsave("/home/sofia/Projects/DNM1L/plots/average/confusion_matrix_heatmap.jpeg", plot = p, width = 10, height = 7, units = "in")
+
+tableGrob(tables$Accuracy, rows = NULL)
 
 ```
-
