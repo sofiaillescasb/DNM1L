@@ -99,183 +99,7 @@ ggsave("/home/sofia/Projects/DNM1L/plots/average/hist_all.png", hist_all, width 
 
 ```
 
-# Data Split
-
-```{r eval=FALSE}
 # 
-# db_res %>%
-#   select(-c(id, class)) %>%
-#   ggpairs() # Así se ve la correlación entre variables. Es importante no tomar en cuenta 
-
-# Hay otras formas de hacer esto. Yo solo use esta función y quité las variables que eran redundantes, pero es que mis datos tenían variables que eran super dependientes unas de otras. El señorcito explica muchas cosas aquí que no he terminado de entender https://hbiostat.org/rmsc. En este es específico de bioestadñistica https://hbiostat.org/bbr. Estoy tratando de leer sus cosas. Si querés mejor no uses lo de redun().
-#  Creating repeated CV folds
-set.seed(123)
-
-
-X <- db %>% select(-id, -class)
-y <- db$class
-
-
-
-folds <- createMultiFolds(
-  y = y,
-  k = 5,
-  times = 10
-)
-
-fold_data <- vector("list", length(folds))
-
-for (i in seq_along(folds)) {
-
-  train_idx <- folds[[i]]
-  valid_idx <- setdiff(seq_len(nrow(db)), train_idx)
-
-  # train_data <- db[train_idx, ]
-  # valid_data <- db[valid_idx, ]
-
-  train_X <- db[train_idx, ]
-  valid_X <- db[valid_idx, ]
-  # -------------------------
-  # redun ONLY on training
-  # -------------------------
-
-  # red_vars <- redun(
-  #   as.matrix(
-  #     train_data %>%
-  #       select(-id, -class)
-  #   )
-  # )
-  # 
-  # selected_vars <- red_vars$In
-
-
-  # -------------------------
-  # Selected variables
-  # -------------------------
-
-  # train_X <- train_data %>%
-  #   select(id, class, all_of(selected_vars))
-  # 
-  # valid_X <- valid_data %>%
-  #   select(id, class, all_of(selected_vars))
-
-  
-
-
-  # -------------------------
-  # PCA ONLY on training
-  # -------------------------
-
-  pca_fit <- prcomp(
-    train_X %>% select(-id, -class),
-    scale. = TRUE
-  )
-
-
-  # -------------------------
-  # PCA scores
-  # -------------------------
-
-  train_pca <- predict(
-    pca_fit,
-    train_X %>% select(-id, -class)
-  )
-
-  valid_pca <- predict(
-    pca_fit,
-    valid_X %>% select(-id, -class)
-  )
-
-
-  # -------------------------
-  # Save everything
-  # -------------------------
-
-  fold_data[[i]] <- list(
-    train_idx = train_idx,
-    valid_idx = valid_idx,
-    train_X = train_X,
-    valid_X = valid_X,
-    # red_vars = red_vars,
-    # selected_vars = selected_vars,
-    pca_fit = pca_fit,
-    train_pca = train_pca,
-    valid_pca = valid_pca
-  )
-}
-
-
-
-f1_pca <- autoplot(
-  fold_data[[1]]$pca_fit,
-  data = fold_data[[1]]$train_X,
-  colour = "class",
-  size = 3,
-  loadings = TRUE,
-  loadings.label = TRUE
-) +
-  theme_classic() +
-  scale_colour_manual(
-    values = c("#a39b9b", "#a2d2ff", "#f4a261")
-  )
-
-f2_pca <- autoplot(
-  fold_data[[2]]$pca_fit,
-  data = fold_data[[2]]$train_X,
-  colour = "class",
-  size = 3,
-  loadings = TRUE,
-  loadings.label = TRUE
-) +
-  theme_classic() +
-  scale_colour_manual(
-    values = c("#a39b9b", "#a2d2ff", "#f4a261")
-  )
-
-f3_pca <- autoplot(
-  fold_data[[3]]$pca_fit,
-  data = fold_data[[3]]$train_X,
-  colour = "class",
-  size = 3,
-  loadings = TRUE,
-  loadings.label = TRUE
-) +
-  theme_classic() +
-  scale_colour_manual(
-    values = c("#a39b9b", "#a2d2ff", "#f4a261")
-  )
-
-f4_pca <- autoplot(
-  fold_data[[4]]$pca_fit,
-  data = fold_data[[4]]$train_X,
-  colour = "class",
-  size = 3,
-  loadings = TRUE,
-  loadings.label = TRUE
-) +
-  theme_classic() +
-  scale_colour_manual(
-    values = c("#a39b9b", "#a2d2ff", "#f4a261")
-  )
-
-f5_pca <- autoplot(
-  fold_data[[5]]$pca_fit,
-  data = fold_data[[5]]$train_X,
-  colour = "class",
-  size = 3,
-  loadings = TRUE,
-  loadings.label = TRUE
-) +
-  theme_classic() +
-  scale_colour_manual(
-    values = c("#a39b9b", "#a2d2ff", "#f4a261")
-  )
-
-pca_first_folds <- f1_pca + f2_pca + f3_pca + f4_pca + f5_pca
-
-
-
-```
 
 # Defining model training functions
 
@@ -460,7 +284,7 @@ confusionMatrix(fit_svm_radial)
 
 
 p_svm12 <- make_bound_plot(
-  mod = fit_svm_radial, 
+  mod = fit_svm, 
   dat = db, 
   pcx = 1, 
   pcy = 2, 
@@ -468,7 +292,7 @@ p_svm12 <- make_bound_plot(
 )
 
 p_svm23 <- make_bound_plot(
-  mod = fit_svm_radial, 
+  mod = fit_svm, 
   dat = db, 
   pcx = 2, 
   pcy = 3, 
